@@ -27,10 +27,23 @@
 #include "utils.h"
 #include "tc_common.h"
 #include "tc_util.h"
+#include "p4_types.h"
 
 #define TMPL_ARRAY_START_IDX 1
 #define PATH_OBJ_IDX 0
 #define PATH_PNAME_IDX 1
+#define PATH_CBNAME_IDX 2
+#define PATH_MNAME_IDX 3
+
+static int try_strncpy(char *dest, const char *src, size_t max_len)
+{
+	if (strnlen(src, max_len) == max_len)
+		return -1;
+
+	strcpy(dest, src);
+
+	return 0;
+}
 
 static void p4template_usage(void)
 {
@@ -50,6 +63,86 @@ static void p4template_usage(void)
 		"\n");
 
 	exit(-1);
+}
+
+static int print_metadata_type(struct nlmsghdr *n,
+			       struct p4tc_meta_size_params *sz_params,
+			       FILE *f)
+{
+	const __u16 sz = sz_params->endbit - sz_params->startbit + 1;
+
+	switch (sz_params->datatype) {
+	case P4T_U8:
+	case P4T_U16:
+	case P4T_U32:
+	case P4T_U64:
+	case P4T_U128:
+		print_string(PRINT_ANY, "mtype", "    metadata type %s",
+			     "bit");
+		break;
+	case P4T_S8:
+	case P4T_S16:
+	case P4T_S32:
+	case P4T_S64:
+	case P4T_S128:
+		print_string(PRINT_ANY, "mtype", "    metadata type %s",
+			     "int");
+		break;
+	case P4T_STRING:
+		print_string(PRINT_ANY, "mtype", "    metadata type %s",
+			     "strn");
+		break;
+	case P4T_NUL_STRING:
+		print_string(PRINT_ANY, "mtype", "    metadata type %s",
+			     "nstrn");
+		break;
+	}
+
+	print_nl();
+	print_uint(PRINT_ANY, "msize", "    metadata size %u", sz);
+	print_nl();
+
+	return 0;
+}
+
+static int print_metadata(struct nlmsghdr *n, struct rtattr *arg, __u32 mid,
+			  FILE *f)
+{
+	struct rtattr *tb[P4TC_META_MAX + 1];
+
+	parse_rtattr_nested(tb, P4TC_META_MAX, arg);
+	if (mid) {
+		print_uint(PRINT_ANY, "mid", "    metadata id %u", mid);
+		print_nl();
+	}
+
+	if (tb[P4TC_META_NAME]) {
+		const char *name = RTA_DATA(tb[P4TC_META_NAME]);
+
+		print_string(PRINT_ANY, "mname", "    metadata name %s", name);
+		print_nl();
+	}
+
+	if (tb[P4TC_META_SIZE]) {
+		struct p4tc_meta_size_params *sz_params;
+
+		sz_params = RTA_DATA(tb[P4TC_META_SIZE]);
+		print_metadata_type(n, sz_params, f);
+	}
+	print_nl();
+
+	return 0;
+}
+
+static int print_metadata_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
+				FILE *F)
+{
+	const __u32 *cnt = RTA_DATA(cnt_attr);
+
+	print_uint(PRINT_ANY, "mcount", "    metadata flush count %u", *cnt);
+	print_nl();
+
+	return 0;
 }
 
 static int print_pipeline(struct nlmsghdr *n, FILE *f, struct rtattr *arg)
@@ -124,6 +217,7 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 {
 	struct rtattr *tb[P4TC_MAX + 1];
 	__u32 obj = t->obj;
+	__u32 *ids;
 
 	parse_rtattr_nested(tb, P4TC_MAX, arg);
 
@@ -134,6 +228,17 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 		else
 			print_pipeline(n, f, tb[P4TC_PARAMS]);
 		break;
+	case P4TC_OBJ_META:
+		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
+			print_metadata_flush(n, tb[P4TC_COUNT], f);
+		else {
+			if (tb[P4TC_PATH]) {
+				ids = RTA_DATA(tb[P4TC_PATH]);
+				print_metadata(n, tb[P4TC_PARAMS], ids[0], f);
+			} else {
+				print_metadata(n, tb[P4TC_PARAMS], 0, f);
+			}
+		}
 	default:
 		break;
 	}
@@ -198,6 +303,10 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
 			     "pipeline");
 		break;
+	case P4TC_OBJ_META:
+		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
+			     "metadata");
+		break;
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
@@ -225,7 +334,7 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 #define PATH_SEPARATOR "/"
 
 /* PATH SYNTAX: tc p4template objtype/pname/...  */
-static void parse_path(char *path, char **p4tcpath)
+static int parse_path(char *path, char **p4tcpath)
 {
 	int i = 0;
 	char *component;
@@ -235,6 +344,8 @@ static void parse_path(char *path, char **p4tcpath)
 		p4tcpath[i++] = component;
 		component = strtok(NULL, PATH_SEPARATOR);
 	}
+
+	return i;
 }
 
 #define MAX_OBJ_TYPE_NAME_LEN 32
@@ -243,8 +354,135 @@ static int get_obj_type(const char *str_obj_type)
 {
 	if (!strcmp(str_obj_type, "pipeline"))
 		return P4TC_OBJ_PIPELINE;
+	else if (!strcmp(str_obj_type, "metadata"))
+		return P4TC_OBJ_META;
 
 	return -1;
+}
+
+static int concat_cb_name(char *full_name, const char *cbname,
+			   const char *objname, size_t sz)
+{
+	return snprintf(full_name, sz, "%s/%s", cbname, objname) >= sz ? -1 : 0;
+}
+
+#define STR_IS_EMPTY(str) ((str)[0] == '\0')
+
+static int parse_meta_data_type(const char *type_arg,
+				struct p4tc_meta_size_params *sz_params)
+{
+	struct p4_type_s *type;
+	__u32 bitsz;
+
+	type = get_p4type_byarg(type_arg, &bitsz);
+	if (!type)
+		return -1;
+
+	sz_params->datatype = type->containid;
+	sz_params->startbit = 0;
+	sz_params->endbit = bitsz - 1;
+
+	return 0;
+}
+
+#define P4TC_FLAGS_META_SIZE   0x1
+#define P4TC_FLAGS_META_ID    0x2
+
+static int parse_meta_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			   char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	char full_mname[METANAMSIZ] = {0};
+	struct rtattr *count = NULL;
+	char **argv = *argv_p;
+	__u8 meta_flags = 0;
+	int argc = *argc_p;
+	__u32 mid = 0;
+	__u32 pipeid = 0;
+	int ret = 0;
+	struct p4tc_meta_size_params sz_params;
+	char *cbname, *mname;
+	struct rtattr *nest;
+
+	while (argc > 0) {
+		if (cmd == RTM_NEWP4TEMPLATE) {
+			if (strcmp(*argv, "pipeid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&pipeid, *argv, 10) < 0)
+					return -1;
+			} else if (strcmp(*argv, "mid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&mid, *argv, 10) < 0)
+					return -1;
+
+				meta_flags |= P4TC_FLAGS_META_ID;
+			} else if (strcmp(*argv, "type") == 0) {
+				NEXT_ARG();
+				if (parse_meta_data_type(*argv, &sz_params) < 0)
+					return -1;
+
+				meta_flags |= P4TC_FLAGS_META_SIZE;
+			} else {
+				fprintf(stderr, "Unknown arg %s\n", *argv);
+				return -1;
+			}
+		} else {
+			if (strcmp(*argv, "pipeid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&pipeid, *argv, 10) < 0)
+					return -1;
+			} else if (strcmp(*argv, "mid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&mid, *argv, 10) < 0)
+					return -1;
+
+				meta_flags |= P4TC_FLAGS_META_ID;
+			} else {
+				fprintf(stderr, "Unknown arg %s\n", *argv);
+				return -1;
+			}
+		}
+
+		argv++;
+		argc--;
+	}
+
+	mname = p4tcpath[PATH_MNAME_IDX];
+	cbname = p4tcpath[PATH_CBNAME_IDX];
+
+	if (cbname && mname)
+		ret = concat_cb_name(full_mname, cbname, mname, METANAMSIZ);
+	else if (cbname)
+		ret = try_strncpy(full_mname, cbname, METANAMSIZ);
+
+	if (ret < 0) {
+		fprintf(stderr, "metadata name too long\n");
+		return -1;
+	}
+
+	count = addattr_nest(n, MAX_MSG, 1);
+	if (!cbname && !mname && !mid)
+		*flags |= NLM_F_ROOT;
+
+	if (mid)
+		addattr32(n, MAX_MSG, P4TC_PATH, mid);
+
+	if (meta_flags & P4TC_FLAGS_META_SIZE || !STR_IS_EMPTY(full_mname)) {
+		nest = addattr_nest(n, MAX_MSG, P4TC_PARAMS);
+
+		if (meta_flags & P4TC_FLAGS_META_SIZE)
+			addattr_l(n, MAX_MSG, P4TC_META_SIZE, &sz_params,
+				  sizeof(sz_params));
+		if (!STR_IS_EMPTY(full_mname))
+			addattrstrz(n, MAX_MSG, P4TC_META_NAME, full_mname);
+
+		addattr_nest_end(n, nest);
+	}
+	addattr_nest_end(n, count);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
 }
 
 static int parse_pipeline_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
@@ -404,6 +642,14 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 
 		if (!pipeid && !pname)
 			flags |= NLM_F_ROOT;
+
+		break;
+	case P4TC_OBJ_META:
+		pipeid = parse_meta_data(&argc, &argv, &req.n, p4tcpath, cmd,
+					 &flags);
+		if (pipeid < 0)
+			return -1;
+		req.t.pipeid = pipeid;
 
 		break;
 	default:
