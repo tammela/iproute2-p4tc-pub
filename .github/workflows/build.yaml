@@ -1,0 +1,23 @@
+name: Build each commit incrementally
+
+on:
+  push:
+    branches-ignore:
+       - 'master**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: |
+          sudo apt update && sudo apt install -y gawk flex bison libelf-dev libmnl-dev
+          ./configure
+          for commit in $(git rev-list origin/master..HEAD); do
+              git checkout $commit
+              make -j $(nproc)
+          done
