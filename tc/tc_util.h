@@ -10,6 +10,7 @@
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
 #include <linux/gen_stats.h>
+#include <linux/p4tc.h>
 
 #include "tc_core.h"
 #include "json_print.h"
