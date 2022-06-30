@@ -129,4 +129,6 @@ struct parse_state {
 	__u8 maskblob[P4TC_MAX_KEYSZ];
 };
 
+int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
+			   const char *suffix, FILE *f);
 #endif

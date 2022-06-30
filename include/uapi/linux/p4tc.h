@@ -53,6 +53,16 @@ struct p4tcmsg {
 #define P4TC_DATA_PERM_D_BIT 1
 #define P4TC_DATA_PERM_X_BIT 0
 
+#define P4TC_TABLE_FLAGS_TYPE 0x20
+
+enum {
+	P4TC_TABLE_TYPE_EXACT = 1,
+	P4TC_TABLE_TYPE_LPM = 2,
+	P4TC_TABLE_TYPE_TERNARY = 3,
+	__P4TC_TABLE_TYPE_MAX,
+};
+#define P4TC_TABLE_TYPE_MAX __P4TC_TABLE_TYPE_MAX - 1
+
 #define P4TC_PERM_MAX_BIT P4TC_CTRL_PERM_C_BIT
 
 #define P4TC_CTRL_PERM_C (1 << P4TC_CTRL_PERM_C_BIT)
@@ -83,11 +93,11 @@ struct p4tc_table_parm {
 	__u32 tbl_keysz;
 	__u32 tbl_max_entries;
 	__u32 tbl_max_masks;
-	__u32 tbl_default_key;
 	__u32 tbl_flags;
 	__u32 tbl_num_entries;
 	__u16 tbl_permissions;
-	__u16 PAD0;
+	__u8  tbl_type;
+	__u8  PAD0;
 };
 
 /* Root attributes */
@@ -223,7 +233,6 @@ enum {
 /* Table key attributes */
 enum {
 	P4TC_KEY_UNSPEC,
-	P4TC_KEY_ID, /* u32 */
 	P4TC_KEY_ACT, /* nested key actions */
 	__P4TC_TKEY_MAX
 };
@@ -237,17 +246,33 @@ enum {
 };
 #define P4TC_TABLE_DEFAULT_MAX (__P4TC_TABLE_DEFAULT_MAX - 1)
 
+enum {
+	P4TC_TABLE_ACTS_DEFAULT_ONLY,
+	P4TC_TABLE_ACTS_TABLE_ONLY,
+	__P4TC_TABLE_ACTS_FLAGS_MAX,
+};
+#define P4TC_TABLE_ACTS_FLAGS_MAX (__P4TC_TABLE_ACTS_FLAGS_MAX - 1)
+
+enum {
+	P4TC_TABLE_ACT_UNSPEC,
+	P4TC_TABLE_ACT_FLAGS, /* u8 */
+	P4TC_TABLE_ACT_NAME, /* string */
+	__P4TC_TABLE_ACT_MAX
+};
+#define P4TC_TABLE_ACT_MAX (__P4TC_TABLE_ACT_MAX - 1)
+
 /* Table type attributes */
 enum {
 	P4TC_TABLE_UNSPEC,
 	P4TC_TABLE_NAME, /* string */
 	P4TC_TABLE_INFO, /* struct tc_p4_table_type_parm */
 	P4TC_TABLE_PREACTIONS, /* nested table preactions */
-	P4TC_TABLE_KEYS, /* nested table keys */
+	P4TC_TABLE_KEY, /* nested table key */
 	P4TC_TABLE_POSTACTIONS, /* nested table postactions */
 	P4TC_TABLE_DEFAULT_HIT, /* nested default hit action attributes */
 	P4TC_TABLE_DEFAULT_MISS, /* nested default miss action attributes */
 	P4TC_TABLE_OPT_ENTRY, /* nested const table entry*/
+	P4TC_TABLE_ACTS_LIST, /* nested table actions list */
 	__P4TC_TABLE_MAX
 };
 #define P4TC_TABLE_MAX __P4TC_TABLE_MAX
