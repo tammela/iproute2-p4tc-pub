@@ -228,20 +228,31 @@ void print_known_actions(void)
 
 struct action_util *get_action_kind(char *str)
 {
+	const char *dynact = "dyna";
 	static void *aBODY;
 	void *dlh;
 	char buf[256];
 	struct action_util *a;
+	int looked4dyna = 0;
 #ifdef CONFIG_GACT
 	int looked4gact = 0;
 restart_s:
 #endif
 	for (a = action_list; a; a = a->next) {
-		if (strcmp(a->id, str) == 0)
-			return a;
+		if (looked4dyna) {
+			if (strcmp(a->id, dynact) == 0)
+				return a;
+		} else {
+			if (strcmp(a->id, str) == 0)
+				return a;
+		}
 	}
 
-	snprintf(buf, sizeof(buf), "%s/m_%s.so", get_tc_lib(), str);
+	if (looked4dyna)
+		snprintf(buf, sizeof(buf), "%s/m_%s.so", get_tc_lib(), dynact);
+	else
+		snprintf(buf, sizeof(buf), "%s/m_%s.so", get_tc_lib(), str);
+
 	dlh = dlopen(buf, RTLD_LAZY | RTLD_GLOBAL);
 	if (dlh == NULL) {
 		dlh = aBODY;
@@ -252,24 +263,32 @@ restart_s:
 		}
 	}
 
-	snprintf(buf, sizeof(buf), "%s_action_util", str);
+	if (looked4dyna)
+		snprintf(buf, sizeof(buf), "%s_action_util", dynact);
+	else
+		snprintf(buf, sizeof(buf), "%s_action_util", str);
 	a = dlsym(dlh, buf);
 	if (a == NULL)
 		goto noexist;
 
 reg:
+	if (looked4dyna)
+		strcpy(a->id, str);
 	a->next = action_list;
 	action_list = a;
 	return a;
 
 noexist:
+	if (!looked4dyna) {
+		looked4dyna = 1;
+		goto restart_s;
 #ifdef CONFIG_GACT
-	if (!looked4gact) {
+	} else if (!looked4gact) {
 		looked4gact = 1;
 		strcpy(str, "gact");
 		goto restart_s;
-	}
 #endif
+	}
 	a = calloc(1, sizeof(*a));
 	if (a) {
 		strncpy(a->id, "noact", 15);
