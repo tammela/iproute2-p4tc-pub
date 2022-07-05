@@ -37,6 +37,7 @@
 #define PATH_MNAME_IDX 3
 #define PATH_TBCNAME_IDX 3
 #define PATH_TINAME_IDX 4
+#define PATH_ANAME_IDX 3
 
 static int try_strncpy(char *dest, const char *src, size_t max_len)
 {
@@ -279,6 +280,51 @@ static int print_table_instance_flush(struct nlmsghdr *n,
 	return 0;
 }
 
+static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
+				 __u32 a_id, FILE *f)
+{
+	FILE *fp = (FILE *)arg;
+	struct rtattr *tb[P4TC_ACT_MAX + 1];
+
+	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
+
+	if (tb[P4TC_ACT_NAME]) {
+		const char *name = RTA_DATA(tb[P4TC_ACT_NAME]);
+
+		print_string(PRINT_ANY, "aname", "    template action name %s\n", name);
+	}
+	if (a_id)
+		print_uint(PRINT_ANY, "actid", "    action id %u\n", a_id);
+
+	if (tb[P4TC_ACT_PARMS]) {
+		print_string(PRINT_FP, NULL, "\t%s\n", "params: ");
+		open_json_array(PRINT_JSON, "params");
+		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	if (tb[P4TC_ACT_LIST]) {
+		print_nl();
+		print_string(PRINT_FP, NULL, "    Action list:\n", NULL);
+		tc_print_action(fp, tb[P4TC_ACT_LIST], 0);
+	}
+
+	return 0;
+}
+
+static int print_action_template_flush(struct nlmsghdr *n,
+				       struct rtattr *cnt_attr,
+				       FILE *f)
+{
+	const __u32 *cnt = RTA_DATA(cnt_attr);
+
+	print_uint(PRINT_ANY, "count", "    action template flush count %u",
+		   *cnt);
+	print_nl();
+
+	return 0;
+}
+
 static int print_hdrfield_flush(struct nlmsghdr *n,
 				struct rtattr *cnt_attr,
 				FILE *f)
@@ -500,6 +546,18 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 		else
 			print_hdrfield(tb[P4TC_PARAMS], ids[0], ids[1], f);
 		break;
+	case P4TC_OBJ_ACT:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
+			print_action_template_flush(n, tb[P4TC_COUNT], f);
+		else {
+			if (tb[P4TC_PATH])
+				print_action_template(n, tb[P4TC_PARAMS],
+						      ids[0], f);
+			else
+				print_action_template(n, tb[P4TC_PARAMS], 0, f);
+		}
+		break;
 	default:
 		break;
 	}
@@ -576,6 +634,9 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
 			     "table instance");
 		break;
+	case P4TC_OBJ_ACT:
+		print_string(PRINT_ANY, "obj", "template obj type %s\n",
+			     "action template");
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
@@ -631,6 +692,8 @@ static int get_obj_type(const char *str_obj_type)
 		return P4TC_OBJ_TABLE_INST;
 	else if (!strcmp(str_obj_type, "hdrfield"))
 		return P4TC_OBJ_HDR_FIELD;
+	else if (!strcmp(str_obj_type, "action"))
+		return P4TC_OBJ_ACT;
 
 	return -1;
 }
@@ -642,6 +705,65 @@ static int concat_cb_name(char *full_name, const char *cbname,
 }
 
 #define STR_IS_EMPTY(str) ((str)[0] == '\0')
+
+static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			     char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	char full_actname[ACTNAMSIZ] = {0};
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	__u32 pipeid = 0, actid = 0;
+	int ret = 0;
+	char *pname, *actname, *cbname;
+	struct rtattr *count;
+	struct rtattr *tail;
+
+	pname = p4tcpath[PATH_PNAME_IDX];
+	cbname = p4tcpath[PATH_CBNAME_IDX];
+	actname = p4tcpath[PATH_ANAME_IDX];
+
+	if (cbname && actname)
+		ret = concat_cb_name(full_actname, cbname, actname, ACTNAMSIZ);
+	else if (cbname)
+		ret = try_strncpy(full_actname, cbname, ACTNAMSIZ);
+
+	if (ret < 0) {
+		fprintf(stderr, "Action name too long\n");
+		return -1;
+	}
+
+	count = addattr_nest(n, MAX_MSG, 1);
+	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS);
+	while (argc > 0) {
+		if (strcmp(*argv, "pipeid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&pipeid, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "actid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&actid, *argv, 10) < 0)
+				return -1;
+		} else {
+			if (parse_dyna(&argc, &argv, false, pname, full_actname, n) < 0)
+				return -1;
+		}
+		argv++;
+		argc--;
+	}
+	if (!STR_IS_EMPTY(full_actname))
+		addattrstrz(n, MAX_MSG, P4TC_ACT_NAME, full_actname);
+	addattr_nest_end(n, tail);
+	if (actid)
+		addattr32(n, MAX_MSG, P4TC_PATH, actid);
+	if (!actid && !cbname && !actname)
+		*flags |= NLM_F_ROOT;
+	addattr_nest_end(n, count);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
+}
 
 static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			       char *p4tcpath[], int cmd, unsigned int *flags)
@@ -1371,6 +1493,14 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 	case P4TC_OBJ_HDR_FIELD:
 		pipeid = parse_hdrfield_data(&argc, &argv, &req.n, p4tcpath,
 					     cmd, &flags);
+		if (pipeid < 0)
+			return -1;
+		req.t.pipeid = pipeid;
+
+		break;
+	case P4TC_OBJ_ACT:
+		pipeid = parse_action_data(&argc, &argv, &req.n, p4tcpath, cmd,
+					&flags);
 		if (pipeid < 0)
 			return -1;
 		req.t.pipeid = pipeid;
