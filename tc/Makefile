@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 TCOBJ= tc.o tc_qdisc.o tc_class.o tc_filter.o tc_util.o tc_monitor.o \
-       tc_exec.o m_police.o m_estimator.o m_action.o m_ematch.o \
+       tc_exec.o m_police.o m_estimator.o m_action.o m_ematch.o m_dyna.o \
        emp_ematch.tab.o emp_ematch.lex.o p4_types.o p4_tc_template.o \
        p4_tc_json.o cJSON.o cjson_utils.o
 
