@@ -27,17 +27,9 @@
 #include "utils.h"
 #include "tc_common.h"
 #include "tc_util.h"
+#include "p4tc_common.h"
 #include "p4_types.h"
 #include "p4tc_introspection.h"
-
-#define TMPL_ARRAY_START_IDX 1
-#define PATH_OBJ_IDX 0
-#define PATH_PNAME_IDX 1
-#define PATH_CBNAME_IDX 2
-#define PATH_MNAME_IDX 3
-#define PATH_TBCNAME_IDX 3
-#define PATH_TINAME_IDX 4
-#define PATH_ANAME_IDX 3
 
 static int try_strncpy(char *dest, const char *src, size_t max_len)
 {
@@ -660,11 +652,10 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	return 0;
 }
 
-#define MAX_PATH_COMPONENTS 5
 #define PATH_SEPARATOR "/"
 
 /* PATH SYNTAX: tc p4template objtype/pname/...  */
-static int parse_path(char *path, char **p4tcpath)
+void parse_path(char *path, char **p4tcpath)
 {
 	int i = 0;
 	char *component;
@@ -674,13 +665,11 @@ static int parse_path(char *path, char **p4tcpath)
 		p4tcpath[i++] = component;
 		component = strtok(NULL, PATH_SEPARATOR);
 	}
-
-	return i;
 }
 
 #define MAX_OBJ_TYPE_NAME_LEN 32
 
-static int get_obj_type(const char *str_obj_type)
+int get_obj_type(const char *str_obj_type)
 {
 	if (!strcmp(str_obj_type, "pipeline"))
 		return P4TC_OBJ_PIPELINE;
@@ -694,17 +683,17 @@ static int get_obj_type(const char *str_obj_type)
 		return P4TC_OBJ_HDR_FIELD;
 	else if (!strcmp(str_obj_type, "action"))
 		return P4TC_OBJ_ACT;
+	else if (!strcmp(str_obj_type, "table"))
+		return P4TC_OBJ_TABLE_ENTRY;
 
 	return -1;
 }
 
-static int concat_cb_name(char *full_name, const char *cbname,
+int concat_cb_name(char *full_name, const char *cbname,
 			   const char *objname, size_t sz)
 {
 	return snprintf(full_name, sz, "%s/%s", cbname, objname) >= sz ? -1 : 0;
 }
-
-#define STR_IS_EMPTY(str) ((str)[0] == '\0')
 
 static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			     char *p4tcpath[], int cmd, unsigned int *flags)

@@ -67,6 +67,8 @@ static int p4tc_find_obj(FILE *f, const char *obj_name, const __u32 objid,
 	return -1;
 }
 
+#define find_table(f, obj_name, objid) (p4tc_find_obj(f, obj_name, objid, "table "))
+
 #define p4tc_find_header(f, obj_name, objid) (p4tc_find_obj(f, obj_name, objid, "header "))
 
 int p4tc_get_header_fields(struct hdrfield fields[], const char *pname,
@@ -161,6 +163,79 @@ struct hdrfield *p4tc_find_hdrfield(struct hdrfield fields[],
 	for (i = 0; i < num_fields; i++) {
 		if (strncmp(fields[i].name, fieldname, TEMPLATENAMSZ) == 0)
 			return &fields[i];
+	}
+
+	return NULL;
+}
+
+int p4tc_get_table_keys(struct tkey keys[], const char *pname,
+			const char *tname, const __u32 tbc_id)
+{
+	int i = 0;
+	char *line = NULL;
+	char key_name[TABLEKEYNAMSIZ];
+	char type_str[TCLASSNAMSIZ];
+	char path[PATH_MAX];
+	char key_str[4];
+	size_t len;
+	FILE *f;
+	int ret;
+
+	if (!getenv(ENV_VAR))
+		return -1;
+
+	if (!pname)
+		return -1;
+
+	if (snprintf(path, PATH_MAX, "%s/%s", getenv(ENV_VAR), pname) >= PATH_MAX)
+		return -1;
+
+	f = fopen(path, "r");
+	if (f == NULL)
+		return -1;
+
+	if (find_table(f, tname, tbc_id) < 0) {
+		ret = -1;
+		goto out;
+	}
+
+	while (getline(&line, &len, f) != -1) {
+		struct p4_type_s *p4_type;
+		int scanned;
+		__u32 bitsz;
+
+		scanned = sscanf(line, "%s %s %s[^\n]", key_str, key_name,
+				 type_str);
+		if (scanned != 3)
+			break;
+		if (strcmp(key_str, "key") != 0)
+			continue;
+
+		p4_type = get_p4type_byarg(type_str, &bitsz);
+		if (!p4_type)
+			return -1;
+		strncpy(keys[i].name, key_name, ACTPARAMNAMSIZ);
+		keys[i].type = p4_type;
+		i++;
+	}
+	ret = i;
+
+	fclose(f);
+	return ret;
+
+out:
+	fclose(f);
+	return ret;
+}
+
+struct tkey *p4tc_find_table_key(struct tkey keys[], const char *key_name,
+				 __u32 num_keys)
+{
+	int i;
+
+	for (i = 0; i < num_keys; i++) {
+		if (strncmp(keys[i].name, key_name, TABLEKEYNAMSIZ) == 0)
+			return &keys[i];
 	}
 
 	return NULL;

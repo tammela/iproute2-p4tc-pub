@@ -20,3 +20,27 @@ field dstAddr ipv4 15
 header tcp 3
 field srcPort bit16 16
 field dstPort bit16 17
+
+action test
+param1 u8 1
+param2 u64 2
+
+action ipv4_forward
+nhopDstAddr mac 1
+numPort bit9 2
+
+action ipv4_drop
+nhopDstAddr mac 1
+
+table tname 1
+key srcAddr ipv4
+key dstAddr ipv4
+
+table tname2 2
+key srcPort bit16
+key dstPort bit16
+
+table tname3 3
+key randomKey1 bit8
+key randomKey2 bit32
+key randomKey3 bit64
