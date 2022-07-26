@@ -27,6 +27,7 @@
 #include "utils.h"
 #include "tc_common.h"
 #include "tc_util.h"
+#include "p4tc_common.h"
 #include "p4_types.h"
 
 #include "p4tc_common.h"
@@ -126,6 +127,87 @@ static int print_p4_key(struct rtattr *tb, void *arg)
 	return 0;
 }
 
+int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
+			   FILE *f)
+{
+	char permissions[11] = {0};
+	int i_str;
+	int i;
+
+	for (i = 0; i < P4TC_CTRL_PERM_C_BIT + 1; i++) {
+		if (i >= P4TC_CTRL_PERM_X_BIT)
+			i_str = P4TC_CTRL_PERM_C_BIT - i;
+		else
+			i_str = -1 * (i - P4TC_CTRL_PERM_C_BIT);
+
+		switch (i) {
+		case P4TC_DATA_PERM_C_BIT:
+		case P4TC_CTRL_PERM_C_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'C';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERM_R_BIT:
+		case P4TC_CTRL_PERM_R_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'R';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERM_U_BIT:
+		case P4TC_CTRL_PERM_U_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'U';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERM_D_BIT:
+		case P4TC_CTRL_PERM_D_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'D';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERM_X_BIT:
+		case P4TC_CTRL_PERM_X_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'X';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		}
+	}
+
+	print_string(PRINT_FP, NULL, "%s", prefix);
+	print_string(PRINT_ANY, "permissions", "permissions %s\n", permissions);
+
+	return 0;
+}
+
+static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_TABLE_DEFAULT_MAX + 1];
+
+	parse_rtattr_nested(tb, P4TC_TABLE_DEFAULT_MAX, arg);
+
+	tc_print_action(f, tb[P4TC_TABLE_DEFAULT_ACTION], 1);
+
+	if (tb[P4TC_TABLE_DEFAULT_PERMISSIONS]) {
+		__u16 *permissions;
+
+		permissions = RTA_DATA(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
+		p4tc_print_permissions("", permissions, f);
+	}
+
+	return 0;
+}
+
 static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			    __u32 tbl_id, FILE *f)
 {
@@ -157,6 +239,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			   parm->tbl_default_key);
 		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
 			   parm->tbl_num_entries);
+		p4tc_print_permissions("    ", &parm->tbl_permissions, f);
 
 		print_nl();
 	}
@@ -185,6 +268,40 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 		tc_print_action(f, tb[P4TC_TABLE_POSTACTIONS], 0);
 		print_nl();
 		close_json_object();
+	}
+
+	if (tb[P4TC_TABLE_DEFAULT_HIT]) {
+		print_string(PRINT_FP, NULL,
+			     "    default_hit:\n", NULL);
+		open_json_object("default_hit");
+		p4tc_print_table_default_action(tb[P4TC_TABLE_DEFAULT_HIT], f);
+		print_nl();
+		close_json_object();
+	}
+
+	if (tb[P4TC_TABLE_DEFAULT_MISS]) {
+		print_string(PRINT_FP, NULL,
+			     "    default_miss:\n", NULL);
+		open_json_object("default_miss");
+		p4tc_print_table_default_action(tb[P4TC_TABLE_DEFAULT_MISS], f);
+		print_nl();
+		close_json_object();
+	}
+
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct rtattr *tb_nest[P4TC_MAX + 1];
+
+		parse_rtattr_nested(tb_nest, P4TC_MAX,
+				    tb[P4TC_TABLE_OPT_ENTRY]);
+		if (tb_nest[P4TC_PARAMS]) {
+			print_string(PRINT_FP, NULL, "    entry:\n",
+				     NULL);
+			open_json_object("entry");
+			print_nl();
+			print_table_entry(n, tb_nest[P4TC_PARAMS], f,
+					  "        ", tbl_id);
+			close_json_object();
+		}
 	}
 
 	print_nl();
@@ -774,6 +891,39 @@ out:
 	return ret;
 }
 
+static int parse_table_default_action(int *argc_p, char ***argv_p,
+				      struct nlmsghdr *n, __u32 attr_id)
+{
+	struct rtattr *tail;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	__u16 permissions;
+
+	tail = addattr_nest(n, MAX_MSG, attr_id | NLA_F_NESTED);
+	while (argc > 0) {
+		if (strcmp(*argv, "action") == 0) {
+			if (parse_action(&argc, &argv,
+					 P4TC_TABLE_DEFAULT_ACTION | NLA_F_NESTED, n)) {
+				fprintf(stderr, "Illegal action\n");
+				return -1;
+			}
+		} else if (strcmp(*argv, "permissions") == 0) {
+			NEXT_ARG();
+			if (get_u16(&permissions, *argv, 16) < 0)
+				return -1;
+			addattr16(n, MAX_MSG, P4TC_TABLE_DEFAULT_PERMISSIONS,
+				  permissions);
+		}
+		NEXT_ARG_FWD();
+	}
+	addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
 static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			    char *p4tcpath[], int cmd, unsigned int *flags)
 {
@@ -788,13 +938,27 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	__u32 tbl_id = 0;
 	__u32 pipeid = 0;
 	int ret = 0;
-	char *cbname, *tblname;
+	char *pname, *cbname, *tblname;
 	bool is_default;
 
+	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
 	tblname = p4tcpath[PATH_TBLNAME_IDX];
-	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
-	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	if (cmd != RTM_GETP4TEMPLATE) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     TABLENAMSIZ);
+		if (ret < 0) {
+			fprintf(stderr, "table name too long\n");
+			return -1;
+		}
+	}
+
 	while (argc > 0) {
 		is_default = false;
 		if (cmd == RTM_NEWP4TEMPLATE) {
@@ -876,21 +1040,46 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			} else if (strcmp(*argv, "default_hit_action") == 0) {
 				argv++;
 				argc--;
-				if (parse_action(&argc, &argv,
-						 P4TC_TABLE_DEFAULT_HIT | NLA_F_NESTED, n)) {
-					fprintf(stderr, "Illegal action\n");
+				if (parse_table_default_action(&argc, &argv, n,
+							       P4TC_TABLE_DEFAULT_HIT))
 					return -1;
-				}
 				continue;
 			} else if (strcmp(*argv, "default_miss_action") == 0) {
 				argv++;
 				argc--;
-				if (parse_action(&argc, &argv,
-						 P4TC_TABLE_DEFAULT_MISS | NLA_F_NESTED, n)) {
-					fprintf(stderr, "Illegal action\n");
+				if (parse_table_default_action(&argc, &argv, n,
+							       P4TC_TABLE_DEFAULT_MISS))
 					return -1;
-				}
 				continue;
+			} else if (strcmp(*argv, "permissions") == 0) {
+				NEXT_ARG();
+				if (get_u16(&table.tbl_permissions, *argv, 16) < 0)
+					return -1;
+				table.tbl_flags |= P4TC_TABLE_FLAGS_PERMISSIONS;
+			} else if (strcmp(*argv, "entry") == 0) {
+				struct parse_state state = {0};
+				__u32 offset = 0;
+				struct rtattr *entries;
+				__u32 tmp_ids[2];
+
+				entries = addattr_nest(n, MAX_MSG,
+						       P4TC_TABLE_OPT_ENTRY | NLA_F_NESTED);
+
+				NEXT_ARG();
+				ret = parse_new_table_entry(&argc, &argv, n,
+							    &state, p4tcpath,
+							    pname, tmp_ids,
+							    &offset);
+				if (ret < 0)
+					return -1;
+
+				if (state.has_parsed_keys) {
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB,
+						  state.keyblob, offset);
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB,
+						  state.maskblob, offset);
+				}
+				addattr_nest_end(n, entries);
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
@@ -906,6 +1095,26 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				NEXT_ARG();
 				if (get_u32(&pipeid, *argv, 10) < 0)
 					return -1;
+			} else if (cmd == RTM_DELP4TEMPLATE &&
+				   strcmp(*argv, "default_hit_action") == 0) {
+				struct rtattr *nest_hit_act;
+
+				argv++;
+				argc--;
+				nest_hit_act = addattr_nest(n, MAX_MSG,
+							    P4TC_TABLE_DEFAULT_HIT | NLA_F_NESTED);
+				addattr_nest_end(n, nest_hit_act);
+				continue;
+			} else if (cmd == RTM_DELP4TEMPLATE &&
+				   strcmp(*argv, "default_miss_action") == 0) {
+				struct rtattr *nest_miss_act;
+
+				argv++;
+				argc--;
+				nest_miss_act = addattr_nest(n, MAX_MSG,
+							    P4TC_TABLE_DEFAULT_MISS | NLA_F_NESTED);
+				addattr_nest_end(n, nest_miss_act);
+				continue;
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
@@ -915,32 +1124,30 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		argc--;
 	}
 
-	if (cmd == RTM_NEWP4TEMPLATE)
+
+	if (!cbname && !tblname && !tbl_id) {
+		*flags |= NLM_F_ROOT;
+	} else if (cmd == RTM_GETP4TEMPLATE) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
+	if (cmd == RTM_NEWP4TEMPLATE && table.tbl_flags)
 		addattr_l(n, MAX_MSG, P4TC_TABLE_INFO, &table,
 			  sizeof(table));
 
 	ret = 0;
-	if (cbname && tblname) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     TABLENAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table name too long\n");
-			return -1;
-		}
-	}
-
 	if (!STR_IS_EMPTY(full_tblname))
 		addattrstrz(n, MAX_MSG, P4TC_TABLE_NAME, full_tblname);
 
-	addattr_nest_end(n, tail);
-
-	if (!cbname && !tblname && !tbl_id)
-		*flags |= NLM_F_ROOT;
+	if (tail)
+		addattr_nest_end(n, tail);
 
 	if (tbl_id)
 		addattr32(n, MAX_MSG, P4TC_PATH, tbl_id);
 
-	addattr_nest_end(n, count);
+	if (count)
+		addattr_nest_end(n, count);
 
 out:
 	*argc_p = argc;

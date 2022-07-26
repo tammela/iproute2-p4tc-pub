@@ -129,4 +129,13 @@ struct parse_state {
 	__u8 maskblob[P4TC_MAX_KEYSZ];
 };
 
+int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+                         struct parse_state *state, char *p4tcpath[],
+                         const char *pname, __u32 *ids, __u32 *offset);
+
+int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
+                          FILE *f);
+int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
+                     const char *prefix, __u32 tbl_id);
+
 #endif
