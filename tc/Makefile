@@ -2,8 +2,8 @@
 TCOBJ= tc.o tc_qdisc.o tc_class.o tc_filter.o tc_util.o tc_monitor.o \
        tc_exec.o m_police.o m_estimator.o m_action.o m_ematch.o m_dyna.o \
        emp_ematch.tab.o emp_ematch.lex.o p4_types.o p4_tc_template.o \
-       p4_tc_json.o cJSON.o cjson_utils.o
-
+       m_dyna.o p4_tc_table.o p4_tc_json.o cJSON.o cjson_utils.o
+       
 include ../config.mk
 
 SHARED_LIBS ?= y

@@ -12,6 +12,7 @@ int do_filter(int argc, char **argv);
 int do_chain(int argc, char **argv);
 int do_action(int argc, char **argv);
 int do_p4tmpl(int argc, char **argv);
+int do_p4_table(int argc, char **argv);
 int do_tcmonitor(int argc, char **argv);
 int do_exec(int argc, char **argv);
 
@@ -20,6 +21,7 @@ int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *pname,
 int print_dyna_parms(struct action_util *au, struct rtattr *arg, FILE *f);
 int print_p4tmpl(struct nlmsghdr *n, void *arg);
 int print_action(struct nlmsghdr *n, void *arg);
+int print_table(struct nlmsghdr *n, void *arg);
 int print_filter(struct nlmsghdr *n, void *arg);
 int print_qdisc(struct nlmsghdr *n, void *arg);
 int print_class(struct nlmsghdr *n, void *arg);
