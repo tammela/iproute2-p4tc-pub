@@ -12,12 +12,12 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "names.h"
 #include "utils.h"
 
 #define MAX_ENTRIES  256
-#define NAME_MAX_LEN 512
 
 static int read_id_name(FILE *fp, int *id, char *name)
 {
@@ -149,4 +149,55 @@ char *id_to_name(struct db_names *db, int id, char *name)
 
 	snprintf(name, IDNAME_MAX, "%d", id);
 	return NULL;
+}
+
+int fread_id_name(FILE *fp, int *id, char *namebuf)
+{
+	char buf[NAME_MAX_LEN];
+
+	while (fgets(buf, sizeof(buf), fp)) {
+		char *p = buf;
+
+		while (*p == ' ' || *p == '\t')
+			p++;
+
+		if (*p == '#' || *p == '\n' || *p == 0)
+			continue;
+
+		if (sscanf(p, "0x%x %s\n", id, namebuf) != 2 &&
+				sscanf(p, "0x%x %s #", id, namebuf) != 2 &&
+				sscanf(p, "%d %s\n", id, namebuf) != 2 &&
+				sscanf(p, "%d %s #", id, namebuf) != 2) {
+			strcpy(namebuf, p);
+			return -1;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+void names_tab_initialize(const char *file, char **tab, int size)
+{
+	FILE *fp;
+	int id;
+	char namebuf[NAME_MAX_LEN] = {0};
+	int ret;
+
+	fp = fopen(file, "r");
+	if (!fp)
+		return;
+
+	while ((ret = fread_id_name(fp, &id, &namebuf[0]))) {
+		if (ret == -1) {
+			fprintf(stderr, "Database %s is corrupted at %s\n",
+					file, namebuf);
+			fclose(fp);
+			return;
+		}
+		if (id < 0 || id > size)
+			continue;
+
+		tab[id] = strdup(namebuf);
+	}
+	fclose(fp);
 }

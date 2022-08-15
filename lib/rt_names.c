@@ -23,6 +23,7 @@
 #include <linux/rtnetlink.h>
 
 #include "rt_names.h"
+#include "names.h"
 #include "utils.h"
 
 #define NAME_MAX_LEN 512
@@ -34,31 +35,6 @@ struct rtnl_hash_entry {
 	const char		*name;
 	unsigned int		id;
 };
-
-static int fread_id_name(FILE *fp, int *id, char *namebuf)
-{
-	char buf[NAME_MAX_LEN];
-
-	while (fgets(buf, sizeof(buf), fp)) {
-		char *p = buf;
-
-		while (*p == ' ' || *p == '\t')
-			p++;
-
-		if (*p == '#' || *p == '\n' || *p == 0)
-			continue;
-
-		if (sscanf(p, "0x%x %s\n", id, namebuf) != 2 &&
-				sscanf(p, "0x%x %s #", id, namebuf) != 2 &&
-				sscanf(p, "%d %s\n", id, namebuf) != 2 &&
-				sscanf(p, "%d %s #", id, namebuf) != 2) {
-			strcpy(namebuf, p);
-			return -1;
-		}
-		return 1;
-	}
-	return 0;
-}
 
 static void
 rtnl_hash_initialize(const char *file, struct rtnl_hash_entry **hash, int size)
@@ -89,32 +65,6 @@ rtnl_hash_initialize(const char *file, struct rtnl_hash_entry **hash, int size)
 		entry->name = strdup(namebuf);
 		entry->next = hash[id & (size - 1)];
 		hash[id & (size - 1)] = entry;
-	}
-	fclose(fp);
-}
-
-static void rtnl_tab_initialize(const char *file, char **tab, int size)
-{
-	FILE *fp;
-	int id;
-	char namebuf[NAME_MAX_LEN] = {0};
-	int ret;
-
-	fp = fopen(file, "r");
-	if (!fp)
-		return;
-
-	while ((ret = fread_id_name(fp, &id, &namebuf[0]))) {
-		if (ret == -1) {
-			fprintf(stderr, "Database %s is corrupted at %s\n",
-					file, namebuf);
-			fclose(fp);
-			return;
-		}
-		if (id < 0 || id > size)
-			continue;
-
-		tab[id] = strdup(namebuf);
 	}
 	fclose(fp);
 }
@@ -153,8 +103,8 @@ static void rtnl_rtprot_initialize(void)
 	DIR *d;
 
 	rtnl_rtprot_init = 1;
-	rtnl_tab_initialize(CONFDIR "/rt_protos",
-			    rtnl_rtprot_tab, 256);
+	names_tab_initialize(CONFDIR "/rt_protos",
+			     rtnl_rtprot_tab, 256);
 
 	d = opendir(CONFDIR "/rt_protos.d");
 	if (!d)
@@ -176,7 +126,7 @@ static void rtnl_rtprot_initialize(void)
 
 		snprintf(path, sizeof(path), CONFDIR "/rt_protos.d/%s",
 			 de->d_name);
-		rtnl_tab_initialize(path, rtnl_rtprot_tab, 256);
+		names_tab_initialize(path, rtnl_rtprot_tab, 256);
 	}
 	closedir(d);
 }
@@ -243,8 +193,8 @@ static int rtnl_rtscope_init;
 static void rtnl_rtscope_initialize(void)
 {
 	rtnl_rtscope_init = 1;
-	rtnl_tab_initialize(CONFDIR "/rt_scopes",
-			    rtnl_rtscope_tab, 256);
+	names_tab_initialize(CONFDIR "/rt_scopes",
+			     rtnl_rtscope_tab, 256);
 }
 
 const char *rtnl_rtscope_n2a(int id, char *buf, int len)
@@ -308,8 +258,8 @@ static int rtnl_rtrealm_init;
 static void rtnl_rtrealm_initialize(void)
 {
 	rtnl_rtrealm_init = 1;
-	rtnl_tab_initialize(CONFDIR "/rt_realms",
-			    rtnl_rtrealm_tab, 256);
+	names_tab_initialize(CONFDIR "/rt_realms",
+			     rtnl_rtrealm_tab, 256);
 }
 
 const char *rtnl_rtrealm_n2a(int id, char *buf, int len)
@@ -473,8 +423,8 @@ static int rtnl_rtdsfield_init;
 static void rtnl_rtdsfield_initialize(void)
 {
 	rtnl_rtdsfield_init = 1;
-	rtnl_tab_initialize(CONFDIR "/rt_dsfield",
-			    rtnl_rtdsfield_tab, 256);
+	names_tab_initialize(CONFDIR "/rt_dsfield",
+			     rtnl_rtdsfield_tab, 256);
 }
 
 const char *rtnl_dsfield_n2a(int id, char *buf, int len)
@@ -642,8 +592,8 @@ static int nl_proto_init;
 static void nl_proto_initialize(void)
 {
 	nl_proto_init = 1;
-	rtnl_tab_initialize(CONFDIR "/nl_protos",
-			    nl_proto_tab, 256);
+	names_tab_initialize(CONFDIR "/nl_protos",
+			     nl_proto_tab, 256);
 }
 
 const char *nl_proto_n2a(int id, char *buf, int len)
@@ -728,8 +678,8 @@ static void protodown_reason_initialize(void)
 
 		snprintf(path, sizeof(path), CONFDIR "/protodown_reasons.d/%s",
 			 de->d_name);
-		rtnl_tab_initialize(path, protodown_reason_tab,
-				    PROTODOWN_REASON_NUM_BITS);
+		names_tab_initialize(path, protodown_reason_tab,
+				     PROTODOWN_REASON_NUM_BITS);
 	}
 	closedir(d);
 }
