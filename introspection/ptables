@@ -1,0 +1,22 @@
+header ethernet 1
+field dstAddr macaddr 1
+field srcAddr macaddr 2
+field type bit16 3
+
+header ipv4 2
+field version bit4 4
+field ihl bit4 5
+field tos bit8 6
+field totlen bit16 7
+field id bit16 8
+field flags bit3 9
+field fragoff bit13 10
+field ttl bit8 11
+field proto bit8 12
+field checksum bit16 13
+field srcAddr ipv4 14
+field dstAddr ipv4 15
+
+header tcp 3
+field srcPort bit16 16
+field dstPort bit16 17

@@ -123,6 +123,19 @@ static int parse_p4t_be32_val(void *val, const char *arg, int base)
 	return 0;
 }
 
+static int parse_p4t_ipv4_val(void *val, const char *arg, int base)
+{
+	inet_prefix *newaddr = val;
+	inet_prefix iaddr;
+
+	if (get_prefix_1(&iaddr, (char *)arg, AF_INET))
+		return -1;
+
+	*newaddr = iaddr;
+
+	return 0;
+}
+
 static void print_p4t_u8_val(const char *name, void *val, __u8 bitstart,
 			     __u8 bitend, FILE *f)
 {
@@ -410,6 +423,26 @@ static struct p4_type_s nulstring_typ = {
 	.name = "nstrn"
 };
 
+static struct p4_type_s mac_typ = {
+	.containid = P4T_MACADDR,
+	.parse_p4t = NULL,
+	.print_p4t = NULL,
+	.bitsz = 48,
+	.startbit = 0,
+	.endbit = 47,
+	.name = "macaddr"
+};
+
+static struct p4_type_s ipv4_typ = {
+	.containid = P4T_IPV4ADDR,
+	.parse_p4t = parse_p4t_ipv4_val,
+	.print_p4t = NULL,
+	.bitsz = 32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "ipv4"
+};
+
 void register_p4_types(void)
 {
 	hlist_add_head(&u8_typ.hlist, &types_list);
@@ -426,6 +459,8 @@ void register_p4_types(void)
 	hlist_add_head(&be32_typ.hlist, &types_list);
 	hlist_add_head(&string_typ.hlist, &types_list);
 	hlist_add_head(&nulstring_typ.hlist, &types_list);
+	hlist_add_head(&mac_typ.hlist, &types_list);
+	hlist_add_head(&ipv4_typ.hlist, &types_list);
 }
 
 void unregister_p4_types(void)
@@ -444,4 +479,6 @@ void unregister_p4_types(void)
 	hlist_del(&be32_typ.hlist);
 	hlist_del(&string_typ.hlist);
 	hlist_del(&nulstring_typ.hlist);
+	hlist_del(&mac_typ.hlist);
+	hlist_del(&ipv4_typ.hlist);
 }

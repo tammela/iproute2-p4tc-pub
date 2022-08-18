@@ -23,6 +23,7 @@ struct p4tcmsg {
 #define METANAMSIZ TEMPLATENAMSZ
 #define TCLASSNAMSIZ TEMPLATENAMSZ
 #define TINSTNAMSIZ TEMPLATENAMSZ
+#define HDRFIELDNAMSIZ TEMPLATENAMSZ
 
 #define P4TC_TCLASS_FLAGS_KEYSZ 0x01
 #define P4TC_TCLASS_FLAGS_COUNT 0x02
@@ -68,6 +69,7 @@ enum {
 	P4TC_OBJ_META,
 	P4TC_OBJ_TABLE_CLASS,
 	P4TC_OBJ_TABLE_INST,
+	P4TC_OBJ_HDR_FIELD,
 	__P4TC_OBJ_MAX,
 };
 #define P4TC_OBJ_MAX __P4TC_OBJ_MAX
@@ -167,6 +169,22 @@ enum {
 	__P4TC_TINST_MAX
 };
 #define P4TC_TINST_MAX __P4TC_TINST_MAX
+
+struct p4tc_header_field_ty {
+	__u16 startbit;
+	__u16 endbit;
+	__u8  datatype; /* P4T_* */
+};
+
+/* Header field attributes */
+enum {
+	P4TC_HDRFIELD_UNSPEC,
+	P4TC_HDRFIELD_DATA,
+	P4TC_HDRFIELD_NAME,
+	P4TC_HDRFIELD_PARSER_NAME,
+	__P4TC_HDRFIELD_MAX
+};
+#define P4TC_HDRFIELD_MAX (__P4TC_HDRFIELD_MAX - 1)
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 
