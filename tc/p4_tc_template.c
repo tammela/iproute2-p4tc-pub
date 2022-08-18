@@ -51,6 +51,48 @@ static void p4template_usage(void)
 	exit(-1);
 }
 
+static int print_hdrfield(struct rtattr *tb, __u32 parser_id,
+			   __u32 hdrfield_id, FILE *f)
+{
+	struct rtattr *tb_nest[P4TC_HDRFIELD_MAX + 1];
+	struct p4tc_header_field_ty *hdr_ty;
+
+	parse_rtattr_nested(tb_nest, P4TC_HDRFIELD_MAX, tb);
+
+	if (parser_id)
+		print_uint(PRINT_ANY, "parserid", "parserid %u\n",
+			   parser_id);
+
+	if (hdrfield_id)
+		print_uint(PRINT_ANY, "hdrfieldid", "hdrfieldid %u\n",
+			   hdrfield_id);
+
+	if (tb_nest[P4TC_HDRFIELD_DATA]) {
+		struct p4_type_s *type;
+
+		hdr_ty = RTA_DATA(tb_nest[P4TC_HDRFIELD_DATA]);
+
+		type = get_p4type_byid(hdr_ty->datatype);
+		print_string(PRINT_ANY, "containertype", "container type %s\n",
+			     type->name);
+		print_uint(PRINT_ANY, "startbit", "startbit %u\n",
+			   hdr_ty->startbit);
+		print_uint(PRINT_ANY, "endbit", "endbit %u\n",
+			   hdr_ty->endbit);
+	}
+
+	if (tb_nest[P4TC_HDRFIELD_NAME]) {
+		const char *hdrfieldname;
+
+		hdrfieldname = RTA_DATA(tb_nest[P4TC_HDRFIELD_NAME]);
+
+		print_string(PRINT_ANY, "hdrfieldname", "Header field name %s\n",
+			     hdrfieldname);
+	}
+
+	return 0;
+}
+
 static int print_p4_key(struct rtattr *nla, void *arg)
 {
 	FILE *fp = (FILE *)arg;
@@ -298,6 +340,19 @@ static int p4tc_print_table_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
 	return 0;
 }
 
+static int print_hdrfield_flush(struct nlmsghdr *n,
+				struct rtattr *cnt_attr,
+				FILE *f)
+{
+	const __u32 *cnt = RTA_DATA(cnt_attr);
+
+	print_uint(PRINT_ANY, "count", "    header field flush count %u",
+		   *cnt);
+	print_nl();
+
+	return 0;
+}
+
 static int print_metadata_type(struct nlmsghdr *n,
 			       struct p4tc_meta_size_params *sz_params,
 			       FILE *f)
@@ -487,6 +542,13 @@ static int print_p4tmpl_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 			}
 		}
 		break;
+	case P4TC_OBJ_HDR_FIELD:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_P4TC_TMPL_DEL && (n->nlmsg_flags & NLM_F_ROOT))
+			print_hdrfield_flush(n, tb[P4TC_COUNT], f);
+		else
+			print_hdrfield(tb[P4TC_PARAMS], ids[0], ids[1], f);
+		break;
 	default:
 		break;
 	}
@@ -585,6 +647,99 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	}
 
 	return 0;
+}
+
+static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			       char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	__u32 pipeid = 0, parser_id = 0, hdrfield_id = 0;
+	struct p4tc_header_field_ty hdr_ty = {0};
+	__u32 bitsz = 0;
+	struct rtattr *count = NULL;
+	struct p4_type_s *t = NULL;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	/* Parser instance id + header field id */
+	__u32 ids[2] = {0};
+	char *parser_name, *hdrname, *fieldname;
+	char full_hdr_name[HDRFIELDNAMSIZ];
+	struct rtattr *tail;
+
+	while (argc > 0) {
+		if (strcmp(*argv, "pipeid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&pipeid, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "parserid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&parser_id, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "hdrfieldid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&hdrfield_id, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "type") == 0) {
+			NEXT_ARG();
+			t = get_p4type_byarg(*argv, &bitsz);
+		}
+
+		argv++;
+		argc--;
+	}
+
+	parser_name = p4tcpath[PATH_PARSERNAME_IDX];
+	hdrname = p4tcpath[PATH_HDRNAME_IDX];
+	fieldname = p4tcpath[PATH_HDRFIELDNAME_IDX];
+
+	if (cmd == RTM_P4TC_TMPL_CREATE) {
+		if (!t) {
+			fprintf(stderr, "Must specify hdrfield type\n");
+			return -1;
+		}
+
+		hdr_ty.startbit = 0;
+		hdr_ty.endbit = bitsz - 1;
+		hdr_ty.datatype = t->containid;
+	}
+
+	if (!hdrfield_id && !(hdrname && fieldname) && cmd != RTM_P4TC_TMPL_CREATE) {
+		*flags |= NLM_F_ROOT;
+	}
+
+	/* Always add count nest unless it's a dump */
+	if (!((*flags & NLM_F_ROOT) && cmd == RTM_P4TC_TMPL_GET))
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+
+	if (parser_id)
+		ids[0] = parser_id;
+	if (hdrfield_id)
+		ids[1] = hdrfield_id;
+	addattr_l(n, MAX_MSG, P4TC_PATH, ids, sizeof(ids));
+
+	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	if (parser_name)
+		addattrstrz(n, MAX_MSG, P4TC_HDRFIELD_PARSER_NAME,
+			    parser_name);
+
+	if (cmd == RTM_P4TC_TMPL_CREATE) {
+		addattr_l(n, MAX_MSG, P4TC_HDRFIELD_DATA, &hdr_ty,
+			  sizeof(hdr_ty));
+	}
+	if (fieldname) {
+		concat_cb_name(full_hdr_name, hdrname, fieldname,
+			       HDRFIELDNAMSIZ);
+		addattrstrz(n, MAX_MSG, P4TC_HDRFIELD_NAME, full_hdr_name);
+	}
+	addattr_nest_end(n, tail);
+
+	if (count)
+		addattr_nest_end(n, count);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
 }
 
 static int parse_table_key(struct nlmsghdr *n,  int *argc_p, char ***argv_p)
@@ -1198,6 +1353,14 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 	case P4TC_OBJ_TABLE:
 		pipeid = parse_table_data(&argc, &argv, &req.n, p4tcpath, cmd,
 					  &flags);
+		if (pipeid < 0)
+			return -1;
+		req.t.pipeid = pipeid;
+
+		break;
+	case P4TC_OBJ_HDR_FIELD:
+		pipeid = parse_hdrfield_data(&argc, &argv, &req.n, p4tcpath,
+					     cmd, &flags);
 		if (pipeid < 0)
 			return -1;
 		req.t.pipeid = pipeid;
