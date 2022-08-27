@@ -159,11 +159,6 @@ struct p4tc_act_param {
 int dyna_add_param(struct p4tc_act_param *param, void *value, bool in_act,
 		   struct nlmsghdr *n, bool convert_value);
 
-int
-p4tc_act_param_build(struct p4tc_json_actions_list *act,
-		     struct p4tc_act_param *param, const char *param_name,
-		     bool fail_introspection);
-
 #ifdef P4TC
 int do_p4_runtime(int argc, char **argv);
 int print_p4ctrl(struct nlmsghdr *n, void *arg);
