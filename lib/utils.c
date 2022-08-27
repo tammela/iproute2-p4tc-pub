@@ -348,6 +348,32 @@ int get_u16(__u16 *val, const char *arg, int base)
 	return 0;
 }
 
+
+
+int get_s16(__s16 *val, const char *arg, int base)
+{
+	unsigned long res;
+	char *ptr;
+
+	if (!arg || !*arg)
+		return -1;
+	res = strtoul(arg, &ptr, base);
+
+	/* empty string or trailing non-digits */
+	if (!ptr || ptr == arg || *ptr)
+		return -1;
+
+	/* overflow */
+	if (res == ULONG_MAX && errno == ERANGE)
+		return -1;
+
+	if (res > INT16_MAX || res < INT16_MIN)
+		return -1;
+
+	*val = res;
+	return 0;
+}
+
 int get_u8(__u8 *val, const char *arg, int base)
 {
 	unsigned long res;
@@ -366,6 +392,30 @@ int get_u8(__u8 *val, const char *arg, int base)
 		return -1;
 
 	if (res > 0xFFUL)
+		return -1;
+
+	*val = res;
+	return 0;
+}
+
+int get_s8(__s8 *val, const char *arg, int base)
+{
+	unsigned long res;
+	char *ptr;
+
+	if (!arg || !*arg)
+		return -1;
+
+	res = strtoul(arg, &ptr, base);
+	/* empty string or trailing non-digits */
+	if (!ptr || ptr == arg || *ptr)
+		return -1;
+
+	/* overflow */
+	if (res == ULONG_MAX && errno == ERANGE)
+		return -1;
+
+	if (res > INT8_MAX || res < INT8_MIN)
 		return -1;
 
 	*val = res;
