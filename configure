@@ -306,6 +306,13 @@ check_libbpf()
         LIBBPF_VERSION=$(${PKG_CONFIG} libbpf --modversion)
     fi
 
+    LIBBPF_VERSION_MAJOR=$((`echo ${LIBBPF_VERSION} | cut -d. -f1`))
+    LIBBPF_VERSION_MINOR=$((`echo ${LIBBPF_VERSION} | cut -d. -f2`))
+    LIBBPF_VERSION_REVISION=$((`echo ${LIBBPF_VERSION} | cut -d. -f3`))
+    echo 'LIBBPF_VERSION_MAJOR:='$LIBBPF_VERSION_MAJOR >> $CONFIG
+    echo 'LIBBPF_VERSION_MINOR:='$LIBBPF_VERSION_MINOR >> $CONFIG
+    echo 'LIBBPF_VERSION_REVISION:='$LIBBPF_VERSION_REVISION >> $CONFIG
+
     if ! have_libbpf_basic; then
         echo "no"
         echo "	libbpf version $LIBBPF_VERSION is too low, please update it to at least 0.1.0"
