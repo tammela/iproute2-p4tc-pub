@@ -23,6 +23,7 @@
 #include "namespace.h"
 #include "rt_names.h"
 #include "bpf_util.h"
+#include "p4_types.h"
 
 int show_stats;
 int show_details;
@@ -336,11 +337,13 @@ int main(int argc, char **argv)
 	}
 
 	tc_core_init();
+
 	if (rtnl_open(&rth, 0) < 0) {
 		fprintf(stderr, "Cannot open rtnetlink\n");
 		exit(1);
 	}
 
+	register_p4_types();
 	if (use_names && cls_names_init(conf_file)) {
 		ret = -1;
 		goto Exit;
@@ -349,6 +352,7 @@ int main(int argc, char **argv)
 	ret = do_cmd(argc-1, argv+1);
 Exit:
 	rtnl_close(&rth);
+	unregister_p4_types();
 
 	if (use_names)
 		cls_names_uninit();
