@@ -68,7 +68,7 @@ static void usage(void)
 		"                   link | macsec | maddress | monitor | mptcp | mroute | mrule |\n"
 		"                   neighbor | neighbour | netconf | netns | nexthop | ntable |\n"
 		"                   ntbl | route | rule | sr | tap | tcpmetrics |\n"
-		"                   token | tunnel | tuntap | vrf | xfrm }\n"
+		"                   token | tunnel | tuntap | vrf | xfrm | parser }\n"
 		"       OPTIONS := { -V[ersion] | -s[tatistics] | -d[etails] | -r[esolve] |\n"
 		"                    -h[uman-readable] | -iec | -j[son] | -p[retty] |\n"
 		"                    -f[amily] { inet | inet6 | mpls | bridge | link } |\n"
@@ -124,6 +124,7 @@ static const struct cmd {
 	{ "ioam",	do_ioam6 },
 	{ "help",	do_help },
 	{ "stats",	do_ipstats },
+	{ "parser",	do_kparser },
 	{ 0 }
 };
 
