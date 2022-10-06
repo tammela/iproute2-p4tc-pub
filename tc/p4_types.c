@@ -1,11 +1,5 @@
 #include "p4_types.h"
 
-enum {
-	P4T_TYPE_UNSIGNED = (1 << 0),
-	P4T_TYPE_SIGNED = (1 << 1),
-	P4T_TYPE_BIGENDIAN = (1 << 2),
-};
-
 #define P4T_TYPE_UNSIGNED 0x1
 #define P4T_TYPE_SIGNED 0x2
 #define P4T_TYPE_BIGENDIAN 0x4
@@ -14,9 +8,9 @@ enum {
 
 static struct hlist_head types_list = {};
 
-static int parse_p4t_u8_val(void *val, const char *arg, int base)
+static int parse_p4t_u8_val(struct p4_type_value *val, const char *arg, int base)
 {
-	__u8 *newval = val;
+	__u8 *newval = val->value;
 	__u8 ival;
 
 
@@ -27,9 +21,9 @@ static int parse_p4t_u8_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_s8_val(void *val, const char *arg, int base)
+static int parse_p4t_s8_val(struct p4_type_value *val, const char *arg, int base)
 {
-	__s8 *newval = val;
+	__s8 *newval = val->value;
 	__s8 ival;
 
 	if (get_s8(&ival, arg, base))
@@ -39,9 +33,10 @@ static int parse_p4t_s8_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_u16_val(void *val, const char *arg, int base)
+static int parse_p4t_u16_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__u16 *newval = val;
+	__u16 *newval = val->value;
 	__u16 ival;
 
 	if (get_u16(&ival, arg, base))
@@ -51,9 +46,10 @@ static int parse_p4t_u16_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_s16_val(void *val, const char *arg, int base)
+static int parse_p4t_s16_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__s16 *newval = val;
+	__s16 *newval = val->value;
 	__s16 ival;
 
 	if (get_s16(&ival, arg, base))
@@ -63,9 +59,10 @@ static int parse_p4t_s16_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_be16_val(void *val, const char *arg, int base)
+static int parse_p4t_be16_val(struct p4_type_value *val, const char *arg,
+			      int base)
 {
-	__be16 *newval = val;
+	__be16 *newval = val->value;
 	__be16 ival;
 
 	if (get_be16(&ival, arg, base))
@@ -75,9 +72,10 @@ static int parse_p4t_be16_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_s32_val(void *val, const char *arg, int base)
+static int parse_p4t_s32_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__s32 *newval = val;
+	__s32 *newval = val->value;
 	__s32 ival;
 
 	if (get_s32(&ival, arg, base))
@@ -87,9 +85,10 @@ static int parse_p4t_s32_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_u64_val(void *val, const char *arg, int base)
+static int parse_p4t_u64_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__u64 *newval = val;
+	__u64 *newval = val->value;
 	__u64 ival;
 
 	if (get_u64(&ival, arg, base))
@@ -99,9 +98,10 @@ static int parse_p4t_u64_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_u32_val(void *val, const char *arg, int base)
+static int parse_p4t_u32_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__u32 *newval = val;
+	__u32 *newval = val->value;
 	__u32 ival;
 
 	if (get_u32(&ival, arg, base))
@@ -111,9 +111,27 @@ static int parse_p4t_u32_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_be32_val(void *val, const char *arg, int base)
+static int parse_p4t_bool_val(struct p4_type_value *val, const char *arg,
+			      int base)
 {
-	__be32 *newval = val;
+	__u32 *newval = val->value;
+
+	if (strcmp(arg, "true") == 0) {
+		*newval = true;
+	} else if (strcmp(arg, "false") == 0) {
+		*newval = false;
+	} else {
+		fprintf(stderr, "Unknown boolean value %s\n", arg);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int parse_p4t_be32_val(struct p4_type_value *val, const char *arg,
+			      int base)
+{
+	__be32 *newval = val->value;
 	__be32 ival;
 
 	if (get_be32(&ival, arg, base))
@@ -123,69 +141,153 @@ static int parse_p4t_be32_val(void *val, const char *arg, int base)
 	return 0;
 }
 
-static int parse_p4t_ipv4_val(void *val, const char *arg, int base)
+static int parse_p4t_ipv4_val(struct p4_type_value *val, const char *arg,
+			      int base)
 {
-	inet_prefix *newaddr = val;
+	__u32 *newaddr = val->value;
+	__u32 *new_mask = val->mask;
 	inet_prefix iaddr;
 
 	if (get_prefix_1(&iaddr, (char *)arg, AF_INET))
 		return -1;
 
-	*newaddr = iaddr;
+	memcpy(newaddr, iaddr.data, sizeof(__u32));
+	*new_mask = htonl(~0u << (32 - iaddr.bitlen));
 
 	return 0;
 }
 
-static void print_p4t_u8_val(const char *name, void *val, __u8 bitstart,
-			     __u8 bitend, FILE *f)
+static int parse_p4t_dev_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__u8 *ival = val;
+	const char *devname = arg;
+	__u32 *newval = val->value;
+	int idx;
 
-	fprintf(f, "type value %s[%u-%u].%u\n", name, bitstart, bitend, *ival);
+	idx = ll_name_to_index(devname);
+	if (!idx) {
+		fprintf(stderr, "Invalid dev %s\n", devname);
+		return -1;
+	}
+
+	*newval = idx;
+
+	return 0;
 }
 
-static void print_p4t_u16_val(const char *name, void *val, __u8 bitstart,
-			      __u8 bitend, FILE *f)
+static int parse_p4t_mac_val(struct p4_type_value *val, const char *arg,
+			     int base)
 {
-	__u16 *ival = val;
+	char *newval = val->value;
 
-	fprintf(f, "type value %s[%u-%u].%u\n", name, bitstart, bitend, *ival);
+	if (ll_addr_a2n(newval, ETH_ALEN, arg) < 0) {
+		fprintf(stderr, "mac is invalid %s\n", newval);
+		return -1;
+	}
+
+	return 0;
 }
 
-static void print_p4t_be16_val(const char *name, void *val, __u8 bitstart,
-			       __u8 bitend, FILE *f)
+static void print_p4t_u8_val(const char *name, struct p4_type_value *val,
+			     FILE *f)
 {
-	__be16 *ival = val;
+	__u8 *ival = val->value;
 
-	fprintf(f, "type value %s[%u-%u].%u\n", name, bitstart, bitend,
-		ntohs(*ival));
+	print_uint(PRINT_ANY, "value", "value %u", *ival);
 }
 
-static void print_p4t_u32_val(const char *name, void *val, __u8 bitstart,
-			      __u8 bitend, FILE *f)
+static void print_p4t_u16_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
 {
-	__u32 *ival = val;
+	__u16 *ival = val->value;
 
-	fprintf(f, "type value %s[%u-%u].%u\n", name, bitstart, bitend, *ival);
+	print_uint(PRINT_ANY, "value", "value %u", *ival);
 }
 
-static void print_p4t_be32_val(const char *name, void *val, __u8 bitstart,
-			       __u8 bitend, FILE *f)
+static void print_p4t_be16_val(const char *name, struct p4_type_value *val,
+			       FILE *f)
 {
-	__be32 *ival = val;
+	__be16 *ival = val->value;
 
-	fprintf(f, "type value %s[%u-%u].%u\n", name, bitstart, bitend,
-		ntohl(*ival));
+	print_uint(PRINT_ANY, "value", "value %u", *ival);
+}
+
+static void print_p4t_u32_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
+{
+	__u32 *ival = val->value;
+
+	print_uint(PRINT_ANY, "value", "value %u", *ival);
+}
+
+static void print_p4t_bool_val(const char *name, struct p4_type_value *val,
+			       FILE *f)
+{
+	bool *ival = val->value;
+
+	print_bool(PRINT_ANY, "value", "value %s", *ival);
+}
+
+static void print_p4t_s32_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
+{
+	__s32 *ival = val->value;
+
+	print_int(PRINT_ANY, "value", "value %d", *ival);
+}
+
+static void print_p4t_be32_val(const char *name, struct p4_type_value *val,
+			       FILE *f)
+{
+	__be32 *ival = val->value;
+
+	print_uint(PRINT_ANY, "value", "value %u", ntohl(*ival));
 }
 
 
-static void print_p4t_u64_val(const char *name, void *val, __u8 bitstart,
-			      __u8 bitend, FILE *f)
+static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
 {
-	__u64 *ival = val;
+	__u64 *ival = val->value;
 
-	fprintf(f, "type value %s[%u-%u].%llu\n", name, bitstart, bitend,
-		*ival);
+	print_uint(PRINT_ANY, "value", "value %u", *ival);
+}
+
+static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
+{
+	const char *ifname = val->value;
+
+	print_string(PRINT_ANY, "value", "value %s", ifname);
+}
+
+static void print_p4t_mac_val(const char *name, struct p4_type_value *val,
+			      FILE *f)
+{
+	unsigned char *mac_val = val->value;
+	SPRINT_BUF(b1);
+
+	ll_addr_n2a(mac_val, ETH_ALEN, 0, b1, sizeof(b1));
+	print_string(PRINT_ANY, "value", "value %s", b1);
+}
+
+static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
+			       FILE *f)
+{
+	__u8 *addr = val->value;
+	SPRINT_BUF(buf1);
+	SPRINT_BUF(buf2);
+	__be32 mask_val;
+	int len;
+
+	mask_val = htonl((*(__be32 *)val->mask));
+	len = ffs(mask_val);
+	len = len ? 33 - len : 0;
+	snprintf(buf2, sizeof(buf2), "%s/%d",
+		 format_host_r(AF_INET, 4, addr, buf1, sizeof(buf1)),
+		 len);
+
+	print_string(PRINT_ANY, "value", "value %s", buf2);
 }
 
 struct p4_type_s *get_p4type_byid(int id)
@@ -313,6 +415,16 @@ static struct p4_type_s u32_typ = {
 	.flags = P4T_TYPE_UNSIGNED,
 };
 
+static struct p4_type_s dev_typ = {
+	.containid = P4T_DEV,
+	.bitsz = 32,
+	.startbit = 0,
+	.endbit = 31,
+	.parse_p4t = parse_p4t_dev_val,
+	.print_p4t = print_p4t_dev_val,
+	.name = "dev",
+};
+
 static struct p4_type_s be32_typ = {
 	.containid = P4T_BE32,
 	.bitsz = 32,
@@ -384,7 +496,7 @@ static struct p4_type_s s32_typ = {
 	.startbit = 0,
 	.endbit = 31,
 	.parse_p4t = parse_p4t_s32_val,
-	.print_p4t = NULL,
+	.print_p4t = print_p4t_s32_val,
 	.name = "int32",
 	.flags = P4T_TYPE_SIGNED,
 };
@@ -425,8 +537,8 @@ static struct p4_type_s nulstring_typ = {
 
 static struct p4_type_s mac_typ = {
 	.containid = P4T_MACADDR,
-	.parse_p4t = NULL,
-	.print_p4t = NULL,
+	.parse_p4t = parse_p4t_mac_val,
+	.print_p4t = print_p4t_mac_val,
 	.bitsz = 48,
 	.startbit = 0,
 	.endbit = 47,
@@ -436,11 +548,21 @@ static struct p4_type_s mac_typ = {
 static struct p4_type_s ipv4_typ = {
 	.containid = P4T_IPV4ADDR,
 	.parse_p4t = parse_p4t_ipv4_val,
-	.print_p4t = NULL,
+	.print_p4t = print_p4t_ipv4_val,
 	.bitsz = 32,
 	.startbit = 0,
 	.endbit = 31,
 	.name = "ipv4"
+};
+
+static struct p4_type_s bool_typ = {
+	.containid = P4T_BOOL,
+	.bitsz = 1,
+	.startbit = 0,
+	.endbit = 0,
+	.parse_p4t = parse_p4t_bool_val,
+	.print_p4t = print_p4t_bool_val,
+	.name = "bool",
 };
 
 void register_p4_types(void)
@@ -448,6 +570,7 @@ void register_p4_types(void)
 	hlist_add_head(&u8_typ.hlist, &types_list);
 	hlist_add_head(&u16_typ.hlist, &types_list);
 	hlist_add_head(&u32_typ.hlist, &types_list);
+	hlist_add_head(&bool_typ.hlist, &types_list);
 	hlist_add_head(&u64_typ.hlist, &types_list);
 	hlist_add_head(&u128_typ.hlist, &types_list);
 	hlist_add_head(&s8_typ.hlist, &types_list);
@@ -461,6 +584,7 @@ void register_p4_types(void)
 	hlist_add_head(&nulstring_typ.hlist, &types_list);
 	hlist_add_head(&mac_typ.hlist, &types_list);
 	hlist_add_head(&ipv4_typ.hlist, &types_list);
+	hlist_add_head(&dev_typ.hlist, &types_list);
 }
 
 void unregister_p4_types(void)
@@ -468,6 +592,7 @@ void unregister_p4_types(void)
 	hlist_del(&u8_typ.hlist);
 	hlist_del(&u16_typ.hlist);
 	hlist_del(&u32_typ.hlist);
+	hlist_del(&bool_typ.hlist);
 	hlist_del(&u64_typ.hlist);
 	hlist_del(&u128_typ.hlist);
 	hlist_del(&s8_typ.hlist);
@@ -481,4 +606,5 @@ void unregister_p4_types(void)
 	hlist_del(&nulstring_typ.hlist);
 	hlist_del(&mac_typ.hlist);
 	hlist_del(&ipv4_typ.hlist);
+	hlist_del(&dev_typ.hlist);
 }
