@@ -26,6 +26,7 @@ MANDIR?=$(DATADIR)/man
 ARPDDIR?=/var/lib/arpd
 KERNEL_INCLUDE?=/usr/include
 BASH_COMPDIR?=$(DATADIR)/bash-completion/completions
+INTROSPECTION_PATH?=$(CONFDIR)/introspection
 
 # Path to db_185.h include
 DBM_INCLUDE:=$(DESTDIR)/usr/include
@@ -105,6 +106,8 @@ install: all
 	install -m 0755 -d $(DESTDIR)$(HDRDIR)
 	@for i in $(SUBDIRS);  do $(MAKE) -C $$i install; done
 	install -m 0644 $(shell find etc/iproute2 -maxdepth 1 -type f) $(DESTDIR)$(CONFDIR)
+	install -m 0755 -d $(DESTDIR)$(INTROSPECTION_PATH)
+	install -m 0644 $(shell find etc/iproute2/introspection -type f) $(DESTDIR)$(INTROSPECTION_PATH)
 	install -m 0755 -d $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 bash-completion/tc $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 bash-completion/devlink $(DESTDIR)$(BASH_COMPDIR)

@@ -795,7 +795,8 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	hdrname = p4tcpath[PATH_HDRNAME_IDX];
 	fieldname = p4tcpath[PATH_HDRFIELDNAME_IDX];
 	if (pname && hdrname) {
-		num_fields = p4tc_get_header_fields(fields, pname, hdrname);
+		num_fields = p4tc_get_header_fields(fields, pname, hdrname,
+						    &pipeid);
 		if (num_fields < 0)
 			return num_fields;
 	}
