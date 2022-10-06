@@ -23,6 +23,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <linux/tc_act/tc_metact.h>
 
 #include "utils.h"
 #include "tc_common.h"
@@ -30,6 +31,282 @@
 #include "p4tc_common.h"
 #include "p4_types.h"
 #include "p4tc_introspection.h"
+
+static struct hlist_head kernel_metadata_list = {};
+
+static struct p4_metat_s pktlen_meta = {
+	.id = METACT_LMETA_PKTLEN,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "pktlen",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s datalen_meta = {
+	.id = METACT_LMETA_DATALEN,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "datalen",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbmark_meta = {
+	.id = METACT_LMETA_SKBMARK,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbmark",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s tcindex_meta = {
+	.id = METACT_LMETA_TCINDEX,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "tcindex",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbhash_meta = {
+	.id = METACT_LMETA_SKBHASH,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbhash",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbprio_meta = {
+	.id = METACT_LMETA_SKBPRIO,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbprio",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ifindex_meta = {
+	.id = METACT_LMETA_IFINDEX,
+	.containid = P4T_S32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "ifindex",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s iif_meta = {
+	.id = METACT_LMETA_SKBIIF,
+	.containid = P4T_S32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "iif",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s protocol_meta = {
+	.id = METACT_LMETA_PROTOCOL,
+	.containid = P4T_BE16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "skbproto",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbptype_meta = {
+	.id = METACT_LMETA_PKTYPE,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 2,
+	.name = "skbptype",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbidf_meta = {
+	.id = METACT_LMETA_IDF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skbidf",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbipsum_meta = {
+	.id = METACT_LMETA_IPSUM,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 1,
+	.name = "skbipsum",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbfclon_meta = {
+	.id = METACT_LMETA_FCLONE,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 1,
+	.name = "skbfclon",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbpeek_meta = {
+	.id = METACT_LMETA_PEEKED,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skbpeek",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skboook_meta = {
+	.id = METACT_LMETA_OOOK,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skboook",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbqmap_meta = {
+	.id = METACT_LMETA_QMAP,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "skbqmap",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ptypeoff_meta = {
+	.id = METACT_LMETA_PTYPEOFF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 7,
+	.name = "ptypeoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s cloneoff_meta = {
+	.id = METACT_LMETA_CLONEOFF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 7,
+	.name = "cloneoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s direction_meta = {
+	.id = METACT_LMETA_DIRECTION,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "direction",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ptclnoff_meta = {
+	.id = METACT_LMETA_PTCLNOFF,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "ptclnoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+struct p4_metat_s *get_meta_byname(const char *pname, const char *name)
+{
+	struct hlist_node *m, *tmp_child;
+
+	hlist_for_each_safe(m, tmp_child, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(m, struct p4_metat_s, hlist);
+		if (strcmp(meta->pname, pname) == 0 &&
+		    strnlen(name, METANAMSIZ) == strnlen(meta->name, METANAMSIZ) &&
+		    strncasecmp(meta->name, name, strlen(name)) == 0)
+			return meta;
+	}
+
+	return NULL;
+}
+
+struct p4_metat_s *get_meta_byid(const __u32 pipeid, const __u32 id)
+{
+	struct hlist_node *m, *tmp_child;
+
+	hlist_for_each_safe(m, tmp_child, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(m, struct p4_metat_s, hlist);
+		if (pipeid == meta->pipeid &&
+		    id == meta->id)
+			return meta;
+	}
+
+	return NULL;
+}
+
+void register_new_metadata(struct p4_metat_s *meta)
+{
+	hlist_add_head(&meta->hlist, &kernel_metadata_list);
+}
+
+void register_kernel_metadata(void)
+{
+	register_new_metadata(&pktlen_meta);
+	register_new_metadata(&datalen_meta);
+	register_new_metadata(&skbmark_meta);
+	register_new_metadata(&tcindex_meta);
+	register_new_metadata(&skbhash_meta);
+	register_new_metadata(&skbprio_meta);
+	register_new_metadata(&ifindex_meta);
+	register_new_metadata(&iif_meta);
+	register_new_metadata(&skbidf_meta);
+	register_new_metadata(&protocol_meta);
+	register_new_metadata(&skbipsum_meta);
+	register_new_metadata(&skbfclon_meta);
+	register_new_metadata(&skbpeek_meta);
+	register_new_metadata(&skboook_meta);
+	register_new_metadata(&skbqmap_meta);
+	register_new_metadata(&ptypeoff_meta);
+	register_new_metadata(&skbptype_meta);
+	register_new_metadata(&cloneoff_meta);
+	register_new_metadata(&ptclnoff_meta);
+	register_new_metadata(&direction_meta);
+}
+
+void unregister_kernel_metadata(void)
+{
+	struct hlist_node *n, *tmp_meta;
+
+	hlist_for_each_safe(n, tmp_meta, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(n, struct p4_metat_s, hlist);
+		hlist_del(&meta->hlist);
+	}
+}
 
 static int try_strncpy(char *dest, const char *src, size_t max_len)
 {
