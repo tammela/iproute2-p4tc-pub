@@ -238,11 +238,6 @@ int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *pname,
 					fprintf(stderr, "Unknown state\n");
 					goto err_out;
 				}
-			} else if (strcmp(*argv, "action") == 0) {
-				if (parse_action(&argc, &argv, P4TC_ACT_LIST, n)) {
-					fprintf(stderr, "Illegal action\"\n");
-					return -1;
-				}
 			} else {
 				break;
 			}
@@ -376,64 +371,8 @@ int print_dyna_parms(struct rtattr *arg, FILE *f)
 	return 0;
 }
 
-static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
-{
-	FILE *fp = (FILE *)arg;
-	struct rtattr *tb[P4TC_ACT_MAX + 1];
-	struct tc_act_dyna *opt;
-
-	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
-
-	if (tb[P4TC_ACT_NAME]) {
-		const char *name = RTA_DATA(tb[P4TC_ACT_NAME]);
-
-		print_string(PRINT_ANY, "kind", "%s ", name);
-		print_nl();
-	}
-
-	if (tb[P4TC_ACT_OPT] == NULL) {
-		fprintf(stderr, "Missing dyna parameters\n");
-		return -1;
-	}
-	opt = RTA_DATA(tb[P4TC_ACT_OPT]);
-
-	print_string(PRINT_FP, NULL, "%s\t", _SL_);
-	print_action_control(f, "action ", opt->action, " ");
-	print_nl();
-
-	if (tb[P4TC_ACT_PARMS]) {
-		print_string(PRINT_FP, NULL, "\t%s\n", "params: ");
-		open_json_array(PRINT_JSON, "params");
-		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
-		close_json_array(PRINT_JSON, NULL);
-	}
-
-	if (tb[P4TC_ACT_LIST]) {
-		print_nl();
-		print_string(PRINT_FP, NULL, "    Action list:\n", NULL);
-		tc_print_action(fp, tb[P4TC_ACT_LIST], 0);
-	}
-
-	print_nl();
-	print_uint(PRINT_ANY, "index", "\t index %u", opt->index);
-	print_int(PRINT_ANY, "ref", " ref %d", opt->refcnt);
-	print_int(PRINT_ANY, "bind", " bind %d", opt->bindcnt);
-
-	if (show_stats) {
-		if (tb[P4TC_ACT_TM]) {
-			struct tcf_t *tm = RTA_DATA(tb[P4TC_ACT_TM]);
-
-			print_tm(f, tm);
-		}
-	}
-
-	print_nl();
-
-	return 0;
-}
-
 struct action_util dyna_action_util = {
 	.id = "dyna",
 	.parse_aopt = parse_dyna_cb,
-	.print_aopt = print_dyna,
+	.print_aopt = print_metact,
 };

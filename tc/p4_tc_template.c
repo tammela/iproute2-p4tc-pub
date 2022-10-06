@@ -552,7 +552,6 @@ static int print_table_instance_flush(struct nlmsghdr *n,
 static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 				 __u32 a_id, FILE *f)
 {
-	FILE *fp = (FILE *)arg;
 	struct rtattr *tb[P4TC_ACT_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
@@ -572,11 +571,8 @@ static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 		close_json_array(PRINT_JSON, NULL);
 	}
 
-	if (tb[P4TC_ACT_LIST]) {
-		print_nl();
-		print_string(PRINT_FP, NULL, "    Action list:\n", NULL);
-		tc_print_action(fp, tb[P4TC_ACT_LIST], 0);
-	}
+	if (tb[P4TC_ACT_METACT_LIST])
+		print_metact_cmds(f, tb[P4TC_ACT_METACT_LIST]);
 
 	return 0;
 }
@@ -979,10 +975,15 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	__u32 pipeid = 0, actid = 0;
-	int ret = 0;
+	int ret = 0, ins_cnt = 0;
 	char *pname, *actname, *cbname;
+	struct action_util *a;
 	struct rtattr *count;
 	struct rtattr *tail;
+
+	discover_actions();
+
+	a = get_action_byid(TCA_ID_METACT);
 
 	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
@@ -998,26 +999,46 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		return -1;
 	}
 
+	register_kernel_metadata();
+
 	count = addattr_nest(n, MAX_MSG, 1);
 	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS);
 	while (argc > 0) {
 		if (strcmp(*argv, "pipeid") == 0) {
 			NEXT_ARG();
-			if (get_u32(&pipeid, *argv, 10) < 0)
-				return -1;
+			if (get_u32(&pipeid, *argv, 10) < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		} else if (strcmp(*argv, "actid") == 0) {
 			NEXT_ARG();
-			if (get_u32(&actid, *argv, 10) < 0)
-				return -1;
+			if (get_u32(&actid, *argv, 10) < 0) {
+				ret = -1;
+				goto unregister;
+			}
+		} else if (strcmp(*argv, "cmd") == 0) {
+			ins_cnt = parse_commands(a, &argc, &argv);
+			if (ins_cnt < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		} else {
-			if (parse_dyna(&argc, &argv, false, pname, full_actname, n) < 0)
-				return -1;
+			if (parse_dyna(&argc, &argv, false, pname, full_actname, n) < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		}
 		argv++;
 		argc--;
 	}
 	if (!STR_IS_EMPTY(full_actname))
 		addattrstrz(n, MAX_MSG, P4TC_ACT_NAME, full_actname);
+
+	if (add_commands(n, ins_cnt, P4TC_ACT_METACT_LIST) < 0) {
+		ret = -1;
+		goto unregister;
+	}
+
 	addattr_nest_end(n, tail);
 	if (actid)
 		addattr32(n, MAX_MSG, P4TC_PATH, actid);
@@ -1025,10 +1046,15 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		*flags |= NLM_F_ROOT;
 	addattr_nest_end(n, count);
 
+	ret = pipeid;
+
+unregister:
+	unregister_kernel_metadata();
+
 	*argc_p = argc;
 	*argv_p = argv;
 
-	return pipeid;
+	return ret;
 }
 
 static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
