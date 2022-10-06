@@ -23,6 +23,7 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <linux/tc_act/tc_metact.h>
 
 #include "utils.h"
 #include "tc_common.h"
@@ -30,6 +31,282 @@
 #include "p4tc_common.h"
 #include "p4_types.h"
 #include "p4tc_introspection.h"
+
+static struct hlist_head kernel_metadata_list = {};
+
+static struct p4_metat_s pktlen_meta = {
+	.id = METACT_LMETA_PKTLEN,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "pktlen",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s datalen_meta = {
+	.id = METACT_LMETA_DATALEN,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "datalen",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbmark_meta = {
+	.id = METACT_LMETA_SKBMARK,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbmark",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s tcindex_meta = {
+	.id = METACT_LMETA_TCINDEX,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "tcindex",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbhash_meta = {
+	.id = METACT_LMETA_SKBHASH,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbhash",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbprio_meta = {
+	.id = METACT_LMETA_SKBPRIO,
+	.containid = P4T_U32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "skbprio",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ifindex_meta = {
+	.id = METACT_LMETA_IFINDEX,
+	.containid = P4T_S32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "ifindex",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s iif_meta = {
+	.id = METACT_LMETA_SKBIIF,
+	.containid = P4T_S32,
+	.startbit = 0,
+	.endbit = 31,
+	.name = "iif",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s protocol_meta = {
+	.id = METACT_LMETA_PROTOCOL,
+	.containid = P4T_BE16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "skbproto",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbptype_meta = {
+	.id = METACT_LMETA_PKTYPE,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 2,
+	.name = "skbptype",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbidf_meta = {
+	.id = METACT_LMETA_IDF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skbidf",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbipsum_meta = {
+	.id = METACT_LMETA_IPSUM,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 1,
+	.name = "skbipsum",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbfclon_meta = {
+	.id = METACT_LMETA_FCLONE,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 1,
+	.name = "skbfclon",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbpeek_meta = {
+	.id = METACT_LMETA_PEEKED,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skbpeek",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skboook_meta = {
+	.id = METACT_LMETA_OOOK,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "skboook",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s skbqmap_meta = {
+	.id = METACT_LMETA_QMAP,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "skbqmap",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ptypeoff_meta = {
+	.id = METACT_LMETA_PTYPEOFF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 7,
+	.name = "ptypeoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s cloneoff_meta = {
+	.id = METACT_LMETA_CLONEOFF,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 7,
+	.name = "cloneoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s direction_meta = {
+	.id = METACT_LMETA_DIRECTION,
+	.containid = P4T_U8,
+	.startbit = 0,
+	.endbit = 0,
+	.name = "direction",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+static struct p4_metat_s ptclnoff_meta = {
+	.id = METACT_LMETA_PTCLNOFF,
+	.containid = P4T_U16,
+	.startbit = 0,
+	.endbit = 15,
+	.name = "ptclnoff",
+	.pipeid = 0,
+	.pname = "kernel",
+};
+
+struct p4_metat_s *get_meta_byname(const char *pname, const char *name)
+{
+	struct hlist_node *m, *tmp_child;
+
+	hlist_for_each_safe(m, tmp_child, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(m, struct p4_metat_s, hlist);
+		if (strcmp(meta->pname, pname) == 0 &&
+		    strnlen(name, METANAMSIZ) == strnlen(meta->name, METANAMSIZ) &&
+		    strncasecmp(meta->name, name, strlen(name)) == 0)
+			return meta;
+	}
+
+	return NULL;
+}
+
+struct p4_metat_s *get_meta_byid(const __u32 pipeid, const __u32 id)
+{
+	struct hlist_node *m, *tmp_child;
+
+	hlist_for_each_safe(m, tmp_child, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(m, struct p4_metat_s, hlist);
+		if (pipeid == meta->pipeid &&
+		    id == meta->id)
+			return meta;
+	}
+
+	return NULL;
+}
+
+void register_new_metadata(struct p4_metat_s *meta)
+{
+	hlist_add_head(&meta->hlist, &kernel_metadata_list);
+}
+
+void register_kernel_metadata(void)
+{
+	register_new_metadata(&pktlen_meta);
+	register_new_metadata(&datalen_meta);
+	register_new_metadata(&skbmark_meta);
+	register_new_metadata(&tcindex_meta);
+	register_new_metadata(&skbhash_meta);
+	register_new_metadata(&skbprio_meta);
+	register_new_metadata(&ifindex_meta);
+	register_new_metadata(&iif_meta);
+	register_new_metadata(&skbidf_meta);
+	register_new_metadata(&protocol_meta);
+	register_new_metadata(&skbipsum_meta);
+	register_new_metadata(&skbfclon_meta);
+	register_new_metadata(&skbpeek_meta);
+	register_new_metadata(&skboook_meta);
+	register_new_metadata(&skbqmap_meta);
+	register_new_metadata(&ptypeoff_meta);
+	register_new_metadata(&skbptype_meta);
+	register_new_metadata(&cloneoff_meta);
+	register_new_metadata(&ptclnoff_meta);
+	register_new_metadata(&direction_meta);
+}
+
+void unregister_kernel_metadata(void)
+{
+	struct hlist_node *n, *tmp_meta;
+
+	hlist_for_each_safe(n, tmp_meta, &kernel_metadata_list) {
+		struct p4_metat_s *meta;
+
+		meta = container_of(n, struct p4_metat_s, hlist);
+		hlist_del(&meta->hlist);
+	}
+}
 
 static int try_strncpy(char *dest, const char *src, size_t max_len)
 {
@@ -275,7 +552,6 @@ static int print_table_instance_flush(struct nlmsghdr *n,
 static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 				 __u32 a_id, FILE *f)
 {
-	FILE *fp = (FILE *)arg;
 	struct rtattr *tb[P4TC_ACT_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
@@ -295,11 +571,8 @@ static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 		close_json_array(PRINT_JSON, NULL);
 	}
 
-	if (tb[P4TC_ACT_LIST]) {
-		print_nl();
-		print_string(PRINT_FP, NULL, "    Action list:\n", NULL);
-		tc_print_action(fp, tb[P4TC_ACT_LIST], 0);
-	}
+	if (tb[P4TC_ACT_METACT_LIST])
+		print_metact_cmds(f, tb[P4TC_ACT_METACT_LIST]);
 
 	return 0;
 }
@@ -695,6 +968,21 @@ int concat_cb_name(char *full_name, const char *cbname,
 	return snprintf(full_name, sz, "%s/%s", cbname, objname) >= sz ? -1 : 0;
 }
 
+int fill_user_metadata(struct p4_metat_s metadata[])
+{
+	int num_metadata;
+	int i;
+
+	num_metadata = p4tc_get_metadata(metadata);
+	if (num_metadata < 0)
+		return -1;
+
+	for (i = 0; i < num_metadata; i++)
+		register_new_metadata(&metadata[i]);
+
+	return 0;
+}
+
 static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			     char *p4tcpath[], int cmd, unsigned int *flags)
 {
@@ -702,10 +990,16 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	__u32 pipeid = 0, actid = 0;
-	int ret = 0;
+	int ret = 0, ins_cnt = 0;
+	struct p4_metat_s metadata[32];
 	char *pname, *actname, *cbname;
+	struct action_util *a;
 	struct rtattr *count;
 	struct rtattr *tail;
+
+	discover_actions();
+
+	a = get_action_byid(TCA_ID_METACT);
 
 	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
@@ -721,27 +1015,48 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		return -1;
 	}
 
+	register_kernel_metadata();
+	fill_user_metadata(metadata);
+
 	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
 	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
 
 	while (argc > 0) {
 		if (strcmp(*argv, "pipeid") == 0) {
 			NEXT_ARG();
-			if (get_u32(&pipeid, *argv, 10) < 0)
-				return -1;
+			if (get_u32(&pipeid, *argv, 10) < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		} else if (strcmp(*argv, "actid") == 0) {
 			NEXT_ARG();
-			if (get_u32(&actid, *argv, 10) < 0)
-				return -1;
+			if (get_u32(&actid, *argv, 10) < 0) {
+				ret = -1;
+				goto unregister;
+			}
+		} else if (strcmp(*argv, "cmd") == 0) {
+			ins_cnt = parse_commands(a, &argc, &argv);
+			if (ins_cnt < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		} else {
-			if (parse_dyna(&argc, &argv, false, pname, full_actname, n) < 0)
-				return -1;
+			if (parse_dyna(&argc, &argv, false, pname, full_actname, n) < 0) {
+				ret = -1;
+				goto unregister;
+			}
 		}
 		argv++;
 		argc--;
 	}
 	if (!STR_IS_EMPTY(full_actname))
 		addattrstrz(n, MAX_MSG, P4TC_ACT_NAME, full_actname);
+
+	if (add_commands(n, ins_cnt, P4TC_ACT_METACT_LIST) < 0) {
+		ret = -1;
+		goto unregister;
+	}
+
 	addattr_nest_end(n, tail);
 	if (actid)
 		addattr32(n, MAX_MSG, P4TC_PATH, actid);
@@ -749,10 +1064,15 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		*flags |= NLM_F_ROOT;
 	addattr_nest_end(n, count);
 
+	ret = pipeid;
+
+unregister:
+	unregister_kernel_metadata();
+
 	*argc_p = argc;
 	*argv_p = argv;
 
-	return pipeid;
+	return ret;
 }
 
 static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
