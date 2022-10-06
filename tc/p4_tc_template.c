@@ -289,7 +289,7 @@ static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 		print_uint(PRINT_ANY, "actid", "    action id %u\n", a_id);
 
 	if (tb[P4TC_ACT_PARMS]) {
-		print_string(PRINT_FP, NULL, "\t%s\n", "params: ");
+		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
 		open_json_array(PRINT_JSON, "params");
 		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
 		close_json_array(PRINT_JSON, NULL);
