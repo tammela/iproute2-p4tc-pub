@@ -33,6 +33,7 @@
 #include "tc_common.h"
 #include "p4tc_common.h"
 #include "p4_types.h"
+#include "p4tc_cmds.h"
 
 static void explain(void)
 {
@@ -321,6 +322,8 @@ static int print_dyna_parm_value(FILE *f, struct action_util *au,
 	if (tb[P4TC_ACT_PARAMS_VALUE_OPND]) {
 		print_string(PRINT_FP, NULL, "\n\t  value:\n", "");
 		open_json_object("value");
+		p4tc_cmds_print_operand("A", au,
+			tb[P4TC_ACT_PARAMS_VALUE_OPND], f);
 		close_json_object();
 		print_string(PRINT_FP, NULL, "\t", "");
 	} else {
@@ -442,7 +445,7 @@ static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
 	strlcpy(au->id, RTA_DATA(tb[P4TC_ACT_NAME]),
 		RTA_LENGTH(RTA_PAYLOAD(tb[P4TC_ACT_NAME])));
 
-	return 0;
+	return p4tc_print_cmds(f, au, tb[P4TC_ACT_CMDS_LIST]);
 }
 
 struct action_util dyna_action_util = {

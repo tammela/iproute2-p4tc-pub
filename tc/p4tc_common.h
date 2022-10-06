@@ -110,6 +110,13 @@ struct p4_reg_s {
 	__u32 endbit;
 };
 
+struct p4_metat_s *get_meta_byname(const char *pname, const char *name);
+struct p4_metat_s *get_meta_byid(const __u32 pipeid, const __u32 id);
+void register_kernel_metadata(void);
+void unregister_kernel_metadata(void);
+void register_new_metadata(struct p4_metat_s *meta);
+void unregister_metadata(struct p4_metat_s *meta);
+int fill_user_metadata(struct p4_metat_s metadata[]);
 
 #define TABLEKEYNAMSIZ TEMPLATENAMSZ
 
