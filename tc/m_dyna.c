@@ -33,6 +33,7 @@
 #include "tc_common.h"
 #include "p4tc_common.h"
 #include "p4_types.h"
+#include "p4tc_cmds.h"
 
 static void explain(void)
 {
@@ -321,6 +322,8 @@ static int print_dyna_parm_value(FILE *f, struct action_util *au,
 	if (tb[P4TC_ACT_PARAMS_VALUE_OPND]) {
 		print_string(PRINT_FP, NULL, "\n\t  value:\n", "");
 		open_json_object("value");
+		p4tc_cmds_print_operand("A", au,
+			tb[P4TC_ACT_PARAMS_VALUE_OPND], f);
 		close_json_object();
 		print_string(PRINT_FP, NULL, "\t", "");
 	} else {
@@ -349,6 +352,13 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 		print_string(PRINT_ANY, "name", "\t  %s ", name);
 	}
 
+	if (tb[P4TC_ACT_PARAMS_ID]) {
+		__u32 *id;
+
+		id = RTA_DATA(tb[P4TC_ACT_PARAMS_ID]);
+		print_uint(PRINT_ANY, "id", " id %u ", *id);
+	}
+
 	if (tb[P4TC_ACT_PARAMS_TYPE]) {
 		__u32 contain_id;
 
@@ -359,7 +369,7 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 			return -1;
 		}
 
-		print_string(PRINT_ANY, "type", "type %s ", t->name);
+		print_string(PRINT_ANY, "type", "type %s", t->name);
 	} else {
 		fprintf(stderr, "Must specify params type");
 		return -1;
@@ -368,13 +378,6 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 	if (tb[P4TC_ACT_PARAMS_VALUE]) {
 		print_dyna_parm_value(f, au, t, tb[P4TC_ACT_PARAMS_VALUE],
 				      RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]));
-	}
-
-	if (tb[P4TC_ACT_PARAMS_ID]) {
-		__u32 *id;
-
-		id = RTA_DATA(tb[P4TC_ACT_PARAMS_ID]);
-		print_uint(PRINT_ANY, "id", " id %u\n", *id);
 	}
 
 	return 0;
