@@ -181,7 +181,7 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 
 	if (tb[P4TC_ENTRY_ACT]) {
 		print_string(PRINT_FP, NULL,
-			     "    entry actions:\n", NULL);
+			     "    entry actions:", NULL);
 		open_json_object("actions");
 		print_nl();
 		tc_print_action(f, tb[P4TC_ENTRY_ACT], 0);

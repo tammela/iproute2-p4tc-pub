@@ -417,7 +417,7 @@ int p4tc_get_tables(const char *pname, const char *tname, __u32 *pipeid,
 }
 
 int p4tc_get_table_keys(struct tkey keys[], const char *pname,
-			const char *tname, const __u32 tbc_id)
+			const char *tname, __u32 tbc_id)
 {
 	int i = 0;
 	char *line = NULL;
