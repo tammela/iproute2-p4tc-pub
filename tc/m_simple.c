@@ -201,6 +201,7 @@ static int print_simple(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util simple_action_util = {
 	.id = "simple",
+	.aid = TCA_ACT_SIMP,
 	.parse_aopt = parse_simple,
 	.print_aopt = print_simple,
 };

@@ -511,6 +511,7 @@ print_ipt(struct action_util *au, FILE * f, struct rtattr *arg)
 
 struct action_util ipt_action_util = {
 	.id = "ipt",
+	.aid = TCA_ACT_IPT,
 	.parse_aopt = parse_ipt,
 	.print_aopt = print_ipt,
 };
