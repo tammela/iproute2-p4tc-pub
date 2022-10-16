@@ -331,6 +331,7 @@ static int print_ife(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util ife_action_util = {
 	.id = "ife",
+	.aid = TCA_ACT_IFE,
 	.parse_aopt = parse_ife,
 	.print_aopt = print_ife,
 };

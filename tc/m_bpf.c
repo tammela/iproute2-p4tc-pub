@@ -214,6 +214,7 @@ static int bpf_print_opt(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util bpf_action_util = {
 	.id		= "bpf",
+	.aid		= TCA_ACT_BPF,
 	.parse_aopt	= bpf_parse_opt,
 	.print_aopt	= bpf_print_opt,
 };

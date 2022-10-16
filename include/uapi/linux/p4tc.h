@@ -121,6 +121,8 @@ enum {
 	P4T_U128,
 	P4T_S128,
 	P4T_PATH,
+	P4T_BOOL,
+	P4T_DEV,
 	__P4T_MAX,
 };
 #define P4T_MAX (__P4T_MAX - 1)
@@ -198,7 +200,7 @@ enum {
 	P4TC_ACT_PARMS, /* nested params */
 	P4TC_ACT_OPT, /* action opt */
 	P4TC_ACT_TM, /* action tm */
-	P4TC_ACT_LIST, /* actions list */
+	P4TC_ACT_METACT_LIST, /* command list */
 	P4TC_ACT_ACTIVE, /* u8 */
 	P4TC_ACT_PAD,
 	__P4TC_ACT_MAX
@@ -244,6 +246,33 @@ enum {
 	__P4TC_ENTRY_MAX
 };
 #define P4TC_ENTRY_MAX (__P4TC_ENTRY_MAX - 1)
+
+/* Linux system metadata */
+enum {
+	METACT_LMETA_UNSPEC,
+	METACT_LMETA_PKTLEN,	/* u32 */
+	METACT_LMETA_DATALEN,	/* u32 */
+	METACT_LMETA_SKBMARK,	/* u32 */
+	METACT_LMETA_TCINDEX,	/* u16 */
+	METACT_LMETA_SKBHASH,	/* u32 */
+	METACT_LMETA_SKBPRIO,	/* u32 */
+	METACT_LMETA_IFINDEX,	/* s32 */
+	METACT_LMETA_SKBIIF,	/* s32 */
+	METACT_LMETA_PROTOCOL,	/* be16 */
+	METACT_LMETA_PKTYPE,	/* u8:3 */
+	METACT_LMETA_IDF,	/* u8:1 */
+	METACT_LMETA_IPSUM,	/* u8:2 */
+	METACT_LMETA_OOOK,	/* u8:1 */
+	METACT_LMETA_FCLONE,	/* u8:2 */
+	METACT_LMETA_PEEKED,	/* u8:1 */
+	METACT_LMETA_QMAP,	/* u16 */
+	METACT_LMETA_PTYPEOFF,	/* u8 */
+	METACT_LMETA_CLONEOFF,	/* u8 */
+	METACT_LMETA_PTCLNOFF,	/* u16 */
+	METACT_LMETA_DIRECTION, /* u8:1 */
+	__METACT_LMETA_MAX
+};
+#define METACT_LMETA_MAX (__METACT_LMETA_MAX - 1)
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 

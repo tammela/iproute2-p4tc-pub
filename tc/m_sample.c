@@ -185,6 +185,7 @@ static int print_sample(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util sample_action_util = {
 	.id = "sample",
+	.aid = TCA_ACT_SAMPLE,
 	.parse_aopt = parse_sample,
 	.print_aopt = print_sample,
 };

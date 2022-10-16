@@ -31,6 +31,8 @@
 #include "rt_names.h"
 #include "tc_util.h"
 #include "tc_common.h"
+#include "p4tc_common.h"
+#include "p4_types.h"
 
 static void explain(void)
 {
@@ -52,24 +54,6 @@ static void usage(void)
 	exit(-1);
 }
 
-static int str_to_type(const char *type_str)
-{
-	if (strcmp(type_str, "u8") == 0)
-		return P4T_U8;
-	else if (strcmp(type_str, "u16") == 0)
-		return P4T_U16;
-	else if (strcmp(type_str, "u32") == 0)
-		return P4T_U32;
-	else if (strcmp(type_str, "u64") == 0)
-		return P4T_U64;
-	else if (strcmp(type_str, "mac") == 0)
-		return P4T_MACADDR;
-	else if (strcmp(type_str, "ipv4") == 0)
-		return P4T_IPV4ADDR;
-	else
-		return -1;
-}
-
 struct param {
 	char name[ACTPARAMNAMSIZ];
 	__u32 id;
@@ -79,6 +63,7 @@ struct param {
 static int dyna_add_param(struct param *param, const char *value, bool in_act,
 			  struct nlmsghdr *n)
 {
+	int ret = 0;
 
 	addattrstrz(n, MAX_MSG, P4TC_ACT_PARAMS_NAME, param->name);
 	if (param->id)
@@ -87,101 +72,45 @@ static int dyna_add_param(struct param *param, const char *value, bool in_act,
 		addattr32(n, MAX_MSG, P4TC_ACT_PARAMS_TYPE, param->type);
 
 	if (in_act) {
+		struct p4_type_value val;
+		struct p4_type_s *t;
 		void *new_value;
+		void *new_mask;
 		__u32 sz;
 
-		switch (param->type) {
-		case P4T_U8: {
-			sz = sizeof(__u8);
-
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			if (get_u8(new_value, value, 10)) {
-				fprintf(stderr, "Invalid u8 %s\n", value);
-				free(new_value);
-				return -1;
-			}
-			break;
-		}
-		case P4T_U16: {
-			sz = sizeof(__u16);
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			if (get_u16(new_value, value, 10)) {
-				fprintf(stderr, "Invalid u16 %s\n", value);
-				free(new_value);
-				return -1;
-			}
-			break;
-		}
-		case P4T_U32: {
-			sz = sizeof(__u32);
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			if (get_u32(new_value, value, 10)) {
-				fprintf(stderr, "Invalid u32 %s\n", value);
-				free(new_value);
-				return -1;
-			}
-			break;
-		}
-		case P4T_U64: {
-			sz = sizeof(__u64);
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			if (get_u64(new_value, value, 10)) {
-				fprintf(stderr, "Invalid u64 %s\n", value);
-				free(new_value);
-				return -1;
-			}
-			break;
-		}
-		case P4T_MACADDR: {
-			char mac[ETH_ALEN];
-
-			sz = ETH_ALEN;
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			if (ll_addr_a2n(mac, sz, value) < 0) {
-				fprintf(stderr, "mac is invalid %s\n", value);
-				free(new_value);
-				return -1;
-			}
-			memcpy(new_value, mac, sz);
-			break;
-		}
-		case P4T_IPV4ADDR: {
-			inet_prefix addr;
-			__u32 mask;
-
-			if (get_prefix_1(&addr, (char *)value, AF_INET)) {
-				fprintf(stderr, "Invalid addr %s\n", value);
-				return -1;
-			}
-			sz = 4;
-			new_value = malloc(sz);
-			if (!new_value)
-				return -1;
-			memcpy(new_value, addr.data, sz);
-
-			mask = htonl(~0u << (32 - addr.bitlen));
-			addattr32(n, MAX_MSG, P4TC_ACT_PARAMS_MASK, mask);
-			break;
-		}
-		default:
+		t = get_p4type_byid(param->type);
+		if (!t) {
+			fprintf(stderr, "Unknown param type %d\n", param->type);
 			return -1;
+		}
+		sz = t->bitsz >> 3;
+		new_value = calloc(1, sz);
+		if (!new_value)
+			return -1;
+		new_mask = calloc(1, sz);
+		if (!new_mask) {
+			ret = -1;
+			goto free_value;
+		}
+
+		val.value = new_value;
+		val.mask = new_mask;
+		if (t->parse_p4t &&
+		    t->parse_p4t(&val, value, 0) < 0) {
+			ret = -1;
+			goto free_mask;
 		}
 
 		addattr_l(n, MAX_MSG, P4TC_ACT_PARAMS_VALUE, new_value, sz);
+		addattr_l(n, MAX_MSG, P4TC_ACT_PARAMS_MASK, new_mask, sz);
+
+free_mask:
+		free(new_mask);
+free_value:
 		free(new_value);
 	}
 
-	return 0;
+	return ret;
 }
 
 static int dyna_param_copy_name(char *dst_pname, char *src_pname)
@@ -214,16 +143,16 @@ static int dyna_parse_param(int *argc_p, char ***argv_p, bool in_act,
 	NEXT_ARG();
 	while (argc > 0) {
 		if (strcmp(*argv, "type") == 0) {
-			int type;
+			struct p4_type_s *t;
+			__u32 bitsz;
 
 			NEXT_ARG();
-			type = str_to_type(*argv);
-			if (type < 0) {
-				fprintf(stderr, "Invalid type %s\n",
-					*argv);
+			t = get_p4type_byarg(*argv, &bitsz);
+			if (!t) {
+				fprintf(stderr, "Invalid type %s\n", *argv);
 				return -1;
 			}
-			param.type = type;
+			param.type = t->containid;
 		} else if (strcmp(*argv, "id") == 0) {
 			__u32 id;
 
@@ -309,11 +238,6 @@ int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *pname,
 					fprintf(stderr, "Unknown state\n");
 					goto err_out;
 				}
-			} else if (strcmp(*argv, "action") == 0) {
-				if (parse_action(&argc, &argv, P4TC_ACT_LIST, n)) {
-					fprintf(stderr, "Illegal action\"\n");
-					return -1;
-				}
 			} else {
 				break;
 			}
@@ -383,7 +307,7 @@ parse_dyna_cb(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 static int print_dyna_parm(FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[P4TC_ACT_PARAMS_MAX + 1];
-	__u32 type;
+	struct p4_type_s *t;
 
 	parse_rtattr_nested(tb, P4TC_ACT_PARAMS_MAX, arg);
 
@@ -391,96 +315,34 @@ static int print_dyna_parm(FILE *f, struct rtattr *arg)
 		char *name;
 
 		name = RTA_DATA(tb[P4TC_ACT_PARAMS_NAME]);
-		print_string(PRINT_ANY, "name", "\t%s ", name);
+		print_string(PRINT_ANY, "name", "\t  %s ", name);
 	}
 
 	if (tb[P4TC_ACT_PARAMS_TYPE]) {
-		type = *((__u32 *) RTA_DATA(tb[P4TC_ACT_PARAMS_TYPE]));
-		print_string(PRINT_FP, NULL, "type ", NULL);
-		switch (type) {
-		case P4T_MACADDR:
-			print_string(PRINT_ANY, "type", "%s", "mac");
-			break;
-		case P4T_IPV4ADDR:
-			print_string(PRINT_ANY, "type",	"%s", "ipv4");
-			break;
-		case P4T_U8:
-			print_string(PRINT_ANY, "type",	"%s", "u8");
-			break;
-		case P4T_U16:
-			print_string(PRINT_ANY, "type",	"%s", "u16");
-			break;
-		case P4T_U32:
-			print_string(PRINT_ANY, "type",	"%s", "u32");
-			break;
-		case P4T_U64:
-			print_string(PRINT_ANY, "type",	"%s", "u64");
-			break;
+		__u32 contain_id;
+
+		contain_id = *((__u32 *) RTA_DATA(tb[P4TC_ACT_PARAMS_TYPE]));
+		t = get_p4type_byid(contain_id);
+		if (!t) {
+			fprintf(stderr, "Unknown param type %d\n", contain_id);
+			return -1;
 		}
+
+		print_string(PRINT_ANY, "type", "type %s ", t->name);
 	} else {
 		fprintf(stderr, "Must specify params type");
 		return -1;
 	}
 
 	if (tb[P4TC_ACT_PARAMS_VALUE]) {
-		SPRINT_BUF(b1);
 		void *value = RTA_DATA(tb[P4TC_ACT_PARAMS_VALUE]);
+		void *mask = RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]);
+		struct p4_type_value val;
 
-		switch (type) {
-		case P4T_MACADDR: {
-			unsigned char *addr_parm = value;
-
-			ll_addr_n2a(addr_parm, ETH_ALEN, 0, b1, sizeof(b1));
-			print_string(PRINT_ANY, "mac", " %s", b1);
-			break;
-		}
-		case P4T_IPV4ADDR: {
-			const void *mask_ptr = RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]);
-			__u8 addr[4];
-			__be32 mask;
-			int len;
-			SPRINT_BUF(buf1);
-			SPRINT_BUF(buf2);
-
-			memcpy(addr, (__u8 *)value, sizeof(addr));
-
-			mask = htonl((*(__be32 *) mask_ptr));
-			len = ffs(mask);
-			len = len ? 33 - len : 0;
-			snprintf(buf2, sizeof(buf2), "%s/%d",
-				 format_host_r(AF_INET, 4, addr, buf1, sizeof(buf1)),
-				 len);
-
-			print_string(PRINT_ANY, "ipv4", " %s", buf2);
-			break;
-		}
-		case P4T_U8: {
-			__u8 *val = value;
-
-			print_uint(PRINT_ANY, "u8", " %u", *val);
-			break;
-		}
-		case P4T_U16: {
-			__u16 *val = value;
-
-			print_uint(PRINT_ANY, "u16", " %u", *val);
-			break;
-		}
-		case P4T_U32: {
-			__u32 *val = value;
-
-			print_uint(PRINT_ANY, "u32", " %u", *val);
-			break;
-		}
-		case P4T_U64: {
-			__u64 *val = value;
-
-			print_uint(PRINT_ANY, "u64", " %u", *val);
-			break;
-		}
-		default:
-			break;
-		}
+		val.value = value;
+		val.mask = mask;
+		if (t->print_p4t)
+			t->print_p4t(t->name, &val, f);
 	}
 
 	if (tb[P4TC_ACT_PARAMS_ID]) {
@@ -509,64 +371,8 @@ int print_dyna_parms(struct rtattr *arg, FILE *f)
 	return 0;
 }
 
-static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
-{
-	FILE *fp = (FILE *)arg;
-	struct rtattr *tb[P4TC_ACT_MAX + 1];
-	struct tc_act_dyna *opt;
-
-	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
-
-	if (tb[P4TC_ACT_NAME]) {
-		const char *name = RTA_DATA(tb[P4TC_ACT_NAME]);
-
-		print_string(PRINT_ANY, "kind", "%s ", name);
-		print_nl();
-	}
-
-	if (tb[P4TC_ACT_OPT] == NULL) {
-		fprintf(stderr, "Missing dyna parameters\n");
-		return -1;
-	}
-	opt = RTA_DATA(tb[P4TC_ACT_OPT]);
-
-	print_string(PRINT_FP, NULL, "%s\t", _SL_);
-	print_action_control(f, "action ", opt->action, " ");
-	print_nl();
-
-	if (tb[P4TC_ACT_PARMS]) {
-		print_string(PRINT_FP, NULL, "\t%s\n", "params: ");
-		open_json_array(PRINT_JSON, "params");
-		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
-		close_json_array(PRINT_JSON, NULL);
-	}
-
-	if (tb[P4TC_ACT_LIST]) {
-		print_nl();
-		print_string(PRINT_FP, NULL, "    Action list:\n", NULL);
-		tc_print_action(fp, tb[P4TC_ACT_LIST], 0);
-	}
-
-	print_nl();
-	print_uint(PRINT_ANY, "index", "\t index %u", opt->index);
-	print_int(PRINT_ANY, "ref", " ref %d", opt->refcnt);
-	print_int(PRINT_ANY, "bind", " bind %d", opt->bindcnt);
-
-	if (show_stats) {
-		if (tb[P4TC_ACT_TM]) {
-			struct tcf_t *tm = RTA_DATA(tb[P4TC_ACT_TM]);
-
-			print_tm(f, tm);
-		}
-	}
-
-	print_nl();
-
-	return 0;
-}
-
 struct action_util dyna_action_util = {
 	.id = "dyna",
 	.parse_aopt = parse_dyna_cb,
-	.print_aopt = print_dyna,
+	.print_aopt = print_metact,
 };

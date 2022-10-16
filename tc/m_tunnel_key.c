@@ -731,6 +731,7 @@ static int print_tunnel_key(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util tunnel_key_action_util = {
 	.id = "tunnel_key",
+	.aid = TCA_ACT_TUNNEL_KEY,
 	.parse_aopt = parse_tunnel_key,
 	.print_aopt = print_tunnel_key,
 };

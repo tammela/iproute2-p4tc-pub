@@ -43,28 +43,30 @@ struct parse_state {
 	__u8 maskblob[P4TC_MAX_KEYSZ];
 };
 
-static void parse_common(__u8 *keyblob, __u8 *maskblob, void *val, void *mask,
-			 __u32 *offset, size_t sz)
+static void parse_common(__u8 *keyblob, __u8 *maskblob,
+			 struct p4_type_value *val, __u32 *offset, size_t sz)
 {
-	memcpy((keyblob + *offset), val, sz);
-	memcpy((maskblob + *offset), mask, sz);
+	memcpy((keyblob + *offset), val->value, sz);
+	memcpy((maskblob + *offset), val->mask, sz);
 	*offset += sz;
 }
 
 static int parse_ipv4(struct parse_state *state, __u32 *offset, const char *argv)
 {
+	struct p4_type_value val;
 	struct p4_type_s *type = get_p4type_byid(P4T_IPV4ADDR);
 	__u32 sz = type->bitsz >> 3;
-	inet_prefix addr;
+	__u32 addr;
 	__u32 mask;
 
-	if (type->parse_p4t(&addr, argv, 0) < 0) {
+	val.value = &addr;
+	val.mask = &mask;
+
+	if (type->parse_p4t(&val, argv, 0) < 0) {
 		fprintf(stderr, "Invalid ipv4 address %s\n", argv);
 		return -1;
 	}
-	mask = htonl(~0u << (32 - addr.bitlen));
-	parse_common(state->keyblob, state->maskblob, addr.data, &mask, offset,
-		     sz);
+	parse_common(state->keyblob, state->maskblob, &val, offset, sz);
 
 	return 0;
 }
@@ -179,7 +181,7 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 
 	if (tb[P4TC_ENTRY_ACT]) {
 		print_string(PRINT_FP, NULL,
-			     "    entry actions:\n", NULL);
+			     "    entry actions:", NULL);
 		open_json_object("actions");
 		print_nl();
 		tc_print_action(f, tb[P4TC_ENTRY_ACT], 0);
@@ -373,29 +375,32 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 	} else {
 		int bytesz = type->bitsz >> 3;
 		__u8 *mask = calloc(1, bytesz);
-		__u8 *val = calloc(1, bytesz);
+		__u8 *value = calloc(1, bytesz);
+		struct p4_type_value val;
 		int i;
 
-		if (!val) {
+		if (!value) {
 			fprintf(stderr, "Unable to alloc value");
 			return -1;
 		}
 
 		if (!mask) {
 			fprintf(stderr, "Unable to alloc mask");
-			free(val);
+			free(value);
 			return -1;
 		}
 
 		if (!type->parse_p4t) {
 			fprintf(stderr, "Type has no parse function\n");
-			free(val);
+			free(value);
 			free(mask);
 			return -1;
 		}
 
-		if (type->parse_p4t(val, argv, 10) < 0) {
-			free(val);
+		val.value = value;
+		val.mask = mask;
+		if (type->parse_p4t(&val, argv, 10) < 0) {
+			free(value);
 			free(mask);
 			return -1;
 		}
@@ -403,10 +408,10 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 		for (i = 0; i < bytesz; i++)
 			mask[i] = 0xFF;
 
-		parse_common(state->keyblob, state->maskblob, val, mask, offset,
+		parse_common(state->keyblob, state->maskblob, &val, offset,
 			     bytesz);
 
-		free(val);
+		free(value);
 		free(mask);
 	}
 
