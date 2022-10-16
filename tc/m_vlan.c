@@ -308,6 +308,7 @@ static int print_vlan(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util vlan_action_util = {
 	.id = "vlan",
+	.aid = TCA_ACT_VLAN,
 	.parse_aopt = parse_vlan,
 	.print_aopt = print_vlan,
 };

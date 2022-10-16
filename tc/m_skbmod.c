@@ -234,6 +234,7 @@ static int print_skbmod(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util skbmod_action_util = {
 	.id = "skbmod",
+	.aid = TCA_ACT_SKBMOD,
 	.parse_aopt = parse_skbmod,
 	.print_aopt = print_skbmod,
 };
