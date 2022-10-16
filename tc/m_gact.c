@@ -212,6 +212,7 @@ print_gact(const struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util gact_action_util = {
 	.id = "gact",
+	.aid = TCA_ACT_GACT,
 	.parse_aopt = parse_gact,
 	.print_aopt = print_gact,
 };

@@ -133,6 +133,7 @@ static int print_connmark(const struct action_util *au, FILE *f, struct rtattr *
 
 struct action_util connmark_action_util = {
 	.id = "connmark",
+	.aid = TCA_ACT_CONNMARK,
 	.parse_aopt = parse_connmark,
 	.print_aopt = print_connmark,
 };

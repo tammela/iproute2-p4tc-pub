@@ -263,6 +263,7 @@ static int print_ctinfo(const struct action_util *au, FILE *f, struct rtattr *ar
 
 struct action_util ctinfo_action_util = {
 	.id = "ctinfo",
+	.aid = TCA_ID_CTINFO,
 	.parse_aopt = parse_ctinfo,
 	.print_aopt = print_ctinfo,
 };

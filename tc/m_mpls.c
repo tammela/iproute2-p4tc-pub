@@ -294,6 +294,7 @@ static int print_mpls(const struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util mpls_action_util = {
 	.id = "mpls",
+	.aid = TCA_ID_MPLS,
 	.parse_aopt = parse_mpls,
 	.print_aopt = print_mpls,
 };
