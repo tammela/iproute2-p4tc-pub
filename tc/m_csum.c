@@ -223,6 +223,7 @@ print_csum(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util csum_action_util = {
 	.id = "csum",
+	.aid = TCA_ACT_CSUM,
 	.parse_aopt = parse_csum,
 	.print_aopt = print_csum,
 };

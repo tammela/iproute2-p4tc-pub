@@ -396,6 +396,7 @@ print_ipt(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util xt_action_util = {
 	.id = "xt",
+	.aid = TCA_ACT_XT,
 	.parse_aopt = parse_ipt,
 	.print_aopt = print_ipt,
 };

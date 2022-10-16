@@ -859,6 +859,7 @@ static int print_pedit(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util pedit_action_util = {
 	.id = "pedit",
+	.aid = TCA_ACT_PEDIT,
 	.parse_aopt = parse_pedit,
 	.print_aopt = print_pedit,
 };

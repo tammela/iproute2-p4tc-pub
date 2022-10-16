@@ -190,6 +190,7 @@ print_nat(struct action_util *au, FILE * f, struct rtattr *arg)
 
 struct action_util nat_action_util = {
 	.id = "nat",
+	.aid = TCA_ACT_NAT,
 	.parse_aopt = parse_nat,
 	.print_aopt = print_nat,
 };

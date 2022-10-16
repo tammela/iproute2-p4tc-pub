@@ -19,6 +19,8 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <dlfcn.h>
+#include <dirent.h>
+#include <errno.h>
 
 #include "utils.h"
 #include "tc_common.h"
@@ -83,7 +85,144 @@ static int parse_noaopt(struct action_util *au, int *argc_p,
 	return -1;
 }
 
-static struct action_util *get_action_kind(char *str)
+struct action_util *get_action_byid(__u32 actid)
+{
+	struct action_util *a;
+
+	for (a = action_list; a; a = a->next) {
+		if (a->aid == actid)
+			return a;
+	}
+
+	return NULL;
+}
+const char *act_names[] = {
+	"bpf",
+	"connmark",
+	"csum",
+	"ctinfo",
+	"ct",
+	"ematch",
+	"estimator",
+	"gact",
+	"gate",
+	"ife",
+	"metact",
+	"gact",
+	"gate",
+	"ife",
+	"metact",
+	"mirred",
+	"mpls",
+	"nat",
+	"pedit",
+	"police",
+	"sample",
+	"simple",
+	"skbedit",
+	"skbmod",
+	"tunnel_key",
+	"vlan",
+};
+
+static void discover_actions_by_dir(DIR *d)
+{
+	struct action_util *a;
+	struct dirent *e;
+	char buf[128];
+	char buf2[256];
+	void *dlh;
+	size_t l;
+
+	while ((e = readdir(d))) {
+		if ((e->d_name[0] == '.') &&
+		    ((e->d_name[1] == '\0') ||
+		     ((e->d_name[1] == '.') && (e->d_name[2] == '\0'))))
+			continue;
+
+		l = strlen(&e->d_name[0]);
+		if (l < 4)
+			continue;
+		if (strncmp(&e->d_name[0], "m_", 2))
+			continue;
+
+		if (strcmp(&e->d_name[l - 2], ".o") &&
+		    strcmp(&e->d_name[l - 3], ".so"))
+			continue;
+
+		memset(buf, 0, l+1);
+		strncpy(buf, e->d_name, l-2);
+
+		dlh = dlopen(buf, RTLD_LAZY | RTLD_GLOBAL);
+		if (dlh == NULL)
+			continue;
+
+		memset(buf2, 0, sizeof(buf2));
+		snprintf(buf2, 12+l-2, "%s_action_util", &buf[2]);
+		a = dlsym(dlh, buf2);
+		if (!a) {
+			continue;
+		} else {
+			if(get_action_byid(a->aid))
+				continue;
+		}
+
+		a->next = action_list;
+		action_list = a;
+	}
+}
+
+static void discover_actions_by_array(void)
+{
+	struct action_util *a;
+	char buf[256] = {0};
+	void *dlh;
+	int i;
+
+	for (i = 0; i < sizeof(act_names) / sizeof(char *); i++) {
+		sprintf(buf, "%s_action_util", act_names[i]);
+		dlh = dlopen(NULL, RTLD_LAZY);
+		if (dlh == NULL) {
+			fprintf(stderr, "dlh == NULL\n");
+			continue;
+		}
+
+		a = dlsym(dlh, buf);
+		if (!a) {
+			continue;
+		} else {
+			if(get_action_byid(a->aid))
+				continue;
+		}
+
+		a->next = action_list;
+		action_list = a;
+	}
+}
+
+void discover_actions(void)
+{
+	const char *dirpath = get_tc_lib();
+	DIR *d = NULL;
+
+	d = opendir(dirpath);
+	if (d) {
+		discover_actions_by_dir(d);
+		closedir(d);
+	}
+	discover_actions_by_array();
+}
+
+void print_known_actions(void)
+{
+	struct action_util *a;
+
+	for (a = action_list; a; a = a->next)
+		fprintf(stdout, "Action(%d): %s\n", a->aid, a->id);
+
+}
+
+struct action_util *get_action_kind(char *str)
 {
 	static void *aBODY;
 	void *dlh;
