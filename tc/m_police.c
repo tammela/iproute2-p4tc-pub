@@ -23,6 +23,7 @@ static int print_police(struct action_util *a, FILE *f, struct rtattr *tb);
 
 struct action_util police_action_util = {
 	.id = "police",
+	.aid = TCA_ID_POLICE,
 	.parse_aopt = act_parse_police,
 	.print_aopt = print_police,
 };

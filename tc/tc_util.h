@@ -57,6 +57,7 @@ struct filter_util {
 struct action_util {
 	struct action_util *next;
 	char id[FILTER_NAMESZ];
+	__u32 aid;
 	int (*parse_aopt)(struct action_util *a, int *argc,
 			  char ***argv, int code, struct nlmsghdr *n);
 	int (*print_aopt)(struct action_util *au, FILE *f, struct rtattr *opt);
@@ -71,7 +72,10 @@ struct exec_util {
 };
 
 const char *get_tc_lib(void);
-
+struct action_util *get_action_kind(char *str);
+struct action_util *get_action_byid(__u32 actid);
+void discover_actions(void);
+void print_known_actions(void);
 struct qdisc_util *get_qdisc_kind(const char *str);
 struct filter_util *get_filter_kind(const char *str);
 

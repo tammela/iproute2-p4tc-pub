@@ -357,6 +357,7 @@ print_mirred(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util mirred_action_util = {
 	.id = "mirred",
+	.aid = TCA_ACT_MIRRED,
 	.parse_aopt = parse_mirred,
 	.print_aopt = print_mirred,
 };

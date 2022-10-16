@@ -261,6 +261,7 @@ static int print_skbedit(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util skbedit_action_util = {
 	.id = "skbedit",
+	.aid = TCA_ACT_SKBEDIT,
 	.parse_aopt = parse_skbedit,
 	.print_aopt = print_skbedit,
 };

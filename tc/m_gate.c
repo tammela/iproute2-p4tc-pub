@@ -62,6 +62,7 @@ static int print_gate(struct action_util *au, FILE *f, struct rtattr *arg);
 
 struct action_util gate_action_util = {
 	.id = "gate",
+	.aid = TCA_ID_GATE,
 	.parse_aopt = parse_gate,
 	.print_aopt = print_gate,
 };

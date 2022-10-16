@@ -544,6 +544,7 @@ static int print_ct(struct action_util *au, FILE *f, struct rtattr *arg)
 
 struct action_util ct_action_util = {
 	.id = "ct",
+	.aid = TCA_ID_CT,
 	.parse_aopt = parse_ct,
 	.print_aopt = print_ct,
 };
