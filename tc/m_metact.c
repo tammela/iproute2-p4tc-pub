@@ -1549,21 +1549,6 @@ int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id)
 	return 0;
 }
 
-static int fill_user_metadata(struct p4_metat_s metadata[])
-{
-	int num_metadata;
-	int i;
-
-	num_metadata = p4tc_get_metadata(metadata);
-	if (num_metadata < 0)
-		return -1;
-
-	for (i = 0; i < num_metadata; i++)
-		register_new_metadata(&metadata[i]);
-
-	return 0;
-}
-
 static int parse_metact(struct action_util *a, int *argc_p, char ***argv_p,
 			int tca_id, struct nlmsghdr *n)
 {
