@@ -453,14 +453,19 @@ static int parse_table_keys(int *argc_p, char ***argv_p,
 			    __u32 *offset, char **p4tcpath,
 			    __u32 tbc_id)
 {
+	const char *cbname = p4tcpath[PATH_CBNAME_IDX];
+	const char *tbcname = p4tcpath[PATH_TBCNAME_IDX];
+	char full_tbcname[TCLASSNAMSIZ] = {0};
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	int ret = 0;
 
 	if (!state->has_parsed_keys) {
+		ret = concat_cb_name(full_tbcname, cbname, tbcname,
+				     TCLASSNAMSIZ);
 		state->num_keys = p4tc_get_table_keys(state->keys,
 						      p4tcpath[PATH_TABLE_PNAME_IDX],
-						      p4tcpath[PATH_TBCNAME_IDX],
+						      full_tbcname,
 						      tbc_id);
 	}
 

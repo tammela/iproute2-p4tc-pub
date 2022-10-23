@@ -968,6 +968,21 @@ int concat_cb_name(char *full_name, const char *cbname,
 	return snprintf(full_name, sz, "%s/%s", cbname, objname) >= sz ? -1 : 0;
 }
 
+int fill_user_metadata(struct p4_metat_s metadata[])
+{
+	int num_metadata;
+	int i;
+
+	num_metadata = p4tc_get_metadata(metadata);
+	if (num_metadata < 0)
+		return -1;
+
+	for (i = 0; i < num_metadata; i++)
+		register_new_metadata(&metadata[i]);
+
+	return 0;
+}
+
 static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			     char *p4tcpath[], int cmd, unsigned int *flags)
 {
@@ -976,6 +991,7 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	int argc = *argc_p;
 	__u32 pipeid = 0, actid = 0;
 	int ret = 0, ins_cnt = 0;
+	struct p4_metat_s metadata[32];
 	char *pname, *actname, *cbname;
 	struct action_util *a;
 	struct rtattr *count;
@@ -1000,6 +1016,7 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	}
 
 	register_kernel_metadata();
+	fill_user_metadata(metadata);
 
 	count = addattr_nest(n, MAX_MSG, 1);
 	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS);

@@ -8,15 +8,15 @@ numPort bit9 2
 action ipv4_drop 22 3
 nhopDstAddr macaddr 1
 
-table tname 22 22
+table cb/tname 22 22
 key srcAddr ipv4 1
 key dstAddr ipv4 1
 
-table tname2 22 2
+table cb/tname2 22 2
 key srcPort bit16 1
 key dstPort bit16 1
 
-table tname3 22 3
+table cb/tname3 22 3
 key randomKey1 bit8 1
 key randomKey2 bit32 1
 key randomKey3 bit64 1

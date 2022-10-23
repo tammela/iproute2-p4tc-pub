@@ -100,32 +100,43 @@ struct action_util *get_action_byid(__u32 actid)
 
 	return NULL;
 }
+const char *act_names[] = {
+	"bpf",
+	"connmark",
+	"csum",
+	"ctinfo",
+	"ct",
+	"ematch",
+	"estimator",
+	"gact",
+	"gate",
+	"ife",
+	"metact",
+	"gact",
+	"gate",
+	"ife",
+	"metact",
+	"mirred",
+	"mpls",
+	"nat",
+	"pedit",
+	"police",
+	"sample",
+	"simple",
+	"skbedit",
+	"skbmod",
+	"tunnel_key",
+	"vlan",
+};
 
-void discover_actions(void)
+static void discover_actions_by_dir(DIR *d)
 {
 	struct action_util *a;
-	static void *aBODY;
 	struct dirent *e;
-	char *dirpath;
 	char buf[128];
 	char buf2[256];
 	void *dlh;
 	size_t l;
-	DIR *d;
-
-	dirpath = getenv("TC_LIB_DIR");
-	if (!dirpath) {
-		dirpath = LIBDIR "/tc/";
-		return;
-	}
-
-	fprintf(stderr, "Loading actions from dir <%s> ...\n", dirpath);
-	d = opendir(dirpath);
-	if (!d) {		// Not openable?  Not much to do...
-		fprintf(stderr, "can't opendir $TC_LIB_DIR: %s\n",
-			strerror(errno));
-		return;
-	}
 
 	while ((e = readdir(d))) {
 		if ((e->d_name[0] == '.') &&
@@ -147,16 +158,8 @@ void discover_actions(void)
 		strncpy(buf, e->d_name, l-2);
 
 		dlh = dlopen(buf, RTLD_LAZY | RTLD_GLOBAL);
-		if (dlh == NULL) {
-			dlh = aBODY;
-			if (dlh == NULL) {
-				dlh = aBODY = dlopen(NULL, RTLD_LAZY);
-				if (dlh == NULL) {
-					fprintf(stderr, "dlh == NULL\n");
-					continue;
-				}
-			}
-		}
+		if (dlh == NULL)
+			continue;
 
 		memset(buf2, 0, sizeof(buf2));
 		snprintf(buf2, 12+l-2, "%s_action_util", &buf[2]);
@@ -171,8 +174,47 @@ void discover_actions(void)
 		a->next = action_list;
 		action_list = a;
 	}
+}
 
-	closedir(d);
+static void discover_actions_by_array(void)
+{
+	struct action_util *a;
+	char buf[256] = {0};
+	void *dlh;
+	int i;
+
+	for (i = 0; i < sizeof(act_names) / sizeof(char *); i++) {
+		sprintf(buf, "%s_action_util", act_names[i]);
+		dlh = dlopen(NULL, RTLD_LAZY);
+		if (dlh == NULL) {
+			fprintf(stderr, "dlh == NULL\n");
+			continue;
+		}
+
+		a = dlsym(dlh, buf);
+		if (!a) {
+			continue;
+		} else {
+			if(get_action_byid(a->aid))
+				continue;
+		}
+
+		a->next = action_list;
+		action_list = a;
+	}
+}
+
+void discover_actions(void)
+{
+	const char *dirpath = get_tc_lib();
+	DIR *d = NULL;
+
+	d = opendir(dirpath);
+	if (d) {
+		discover_actions_by_dir(d);
+		closedir(d);
+	}
+	discover_actions_by_array();
 }
 
 void print_known_actions(void)

@@ -99,6 +99,8 @@ static struct op_type_s op_types [] = {
 	{METACT_OP_TBLAPP, "tableapply", parse_tblapp_operands, NULL},
 	{METACT_OP_SNDPORTEGR, "send_port_egress", parse_sndportegr_operands,
 		NULL},
+	{METACT_OP_MIRPORTEGR, "mirror_port_egress", parse_sndportegr_operands,
+		NULL},
 };
 
 static struct op_type_s *get_op_byname(const char *name)
@@ -1460,6 +1462,22 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 				return -1;
 			}
 			continue;
+		} else if (strcmp(*argv, "mirror_port_egress") == 0) {
+                        NEXT_ARG();
+			ins->ins.op_type = METACT_OP_MIRPORTEGR;
+			op = get_op_byname("mirror_port_egress");
+			if (!op) {
+				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "metact bad <mirror_port_egress>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
 
 		} else if (strcmp(*argv, "index") == 0) {
 			break;
@@ -1545,21 +1563,6 @@ int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id)
 		addattr_nest_end(n, tailins);
 	}
 	addattr_nest_end(n, tailinsl);
-
-	return 0;
-}
-
-static int fill_user_metadata(struct p4_metat_s metadata[])
-{
-	int num_metadata;
-	int i;
-
-	num_metadata = p4tc_get_metadata(metadata);
-	if (num_metadata < 0)
-		return -1;
-
-	for (i = 0; i < num_metadata; i++)
-		register_new_metadata(&metadata[i]);
 
 	return 0;
 }
