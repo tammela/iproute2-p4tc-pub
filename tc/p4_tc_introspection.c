@@ -307,6 +307,8 @@ int p4tc_get_act_params(struct p4_param_s params[], const char *pname,
 		scanned = sscanf(line, "%s %s %u %u[^\n]", param_name,
 				 type_str, pipeid, &param_id);
 
+		if (strcmp(param_name, "action") == 0)
+			break;
 		if (scanned != 4)
 			continue;
 
