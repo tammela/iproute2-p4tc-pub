@@ -759,7 +759,7 @@ static int rtnl_dump_done(struct nlmsghdr *h,
 	}
 
 	/* check for any messages returned from kernel */
-	nl_dump_ext_ack(h, NULL);
+	nl_dump_ext_ack_done(h, 0, 0);
 
 	return 0;
 }
