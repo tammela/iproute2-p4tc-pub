@@ -140,8 +140,10 @@ enum tca_id {
 	TCA_ID_MPLS,
 	TCA_ID_CT,
 	TCA_ID_GATE,
+	TCA_ID_DYN,
+	TCA_ID_METACT,
 	/* other actions go here */
-	__TCA_ID_MAX = 255
+	__TCA_ID_MAX = 1023
 };
 
 #define TCA_ID_MAX __TCA_ID_MAX
@@ -722,6 +724,24 @@ enum {
 };
 
 #define TCA_MATCHALL_MAX (__TCA_MATCHALL_MAX - 1)
+
+/* P4 classifier */
+
+enum {
+	TCA_P4_UNSPEC,
+	TCA_P4_CLASSID,
+	TCA_P4_ACT,
+	TCA_P4_PNAME,
+	TCA_P4_PROG_FD,
+	TCA_P4_PROG_NAME,
+	TCA_P4_PROG_TYPE,
+	TCA_P4_PROG_COOKIE,
+	TCA_P4_PROG_ID,
+	TCA_P4_PAD,
+	__TCA_P4_MAX,
+};
+
+#define TCA_P4_MAX (__TCA_P4_MAX - 1)
 
 /* Extended Matches */
 
