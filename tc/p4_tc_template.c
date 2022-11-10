@@ -991,16 +991,14 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	__u32 pipeid = 0, actid = 0;
+	struct action_util a = {0};
 	int ret = 0, ins_cnt = 0;
 	struct p4_metat_s metadata[32];
 	char *pname, *actname, *cbname;
-	struct action_util *a;
 	struct rtattr *count;
 	struct rtattr *tail;
 
 	discover_actions();
-
-	a = get_action_byid(TCA_ID_METACT);
 
 	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
@@ -1016,6 +1014,10 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		return -1;
 	}
 
+	if (snprintf(a.id, ACTNAMSIZ, "%s/%s", pname, full_actname) == ACTNAMSIZ) {
+		fprintf(stderr, "Action name too long\n");
+		return -1;
+	}
 	register_kernel_metadata();
 	fill_user_metadata(metadata);
 
@@ -1036,7 +1038,7 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				goto unregister;
 			}
 		} else if (strcmp(*argv, "cmd") == 0) {
-			ins_cnt = p4tc_parse_cmds(a, &argc, &argv);
+			ins_cnt = p4tc_parse_cmds(&a, &argc, &argv);
 			if (ins_cnt < 0) {
 				ret = -1;
 				goto unregister;

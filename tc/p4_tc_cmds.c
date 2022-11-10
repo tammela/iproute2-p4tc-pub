@@ -120,30 +120,30 @@ struct opnd_type_s {
         int id;
         int type_id;
         const char *name;
-	int (*get_opertype)(const char *op_components[],
+	int (*get_opertype)(struct action_util *a, const char *op_components[],
 			    struct p4tc_u_operand *op, void **path);
 	void (*print_opertype)(struct p4tc_u_operand *oper, void *oppath,
 			       FILE *f);
 };
 
-int get_metadata_type(const char *op_components[],
+int get_metadata_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_operand *op, void **path);
-int get_key_type(const char *op_components[],
+int get_key_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path);
-int get_const_type(const char *op_components[],
+int get_const_type(struct action_util *a, const char *op_components[],
 		   struct p4tc_u_operand *op, void **path);
-int get_act_type(const char *op_components[],
+int get_act_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path);
-int get_table_type(const char *op_components[],
+int get_table_type(struct action_util *a, const char *op_components[],
 		   struct p4tc_u_operand *op, void **path);
-int get_res_type(const char *op_components[],
+int get_res_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path);
-int get_hdrfield_type(const char *op_components[],
+int get_hdrfield_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_operand *op, void **path);
-int get_act_param_type(const char *op_components[],
+int get_act_param_type(struct action_util *a, const char *op_components[],
 		       struct p4tc_u_operand *op, void **path);
-int get_dev_type(const char *op_components[], struct p4tc_u_operand *op,
-		 void **path);
+int get_dev_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path);
 
 static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f);
@@ -209,15 +209,15 @@ static struct opnd_type_s *get_optype_byid(int id)
 	return NULL;
 }
 
-int get_act_type(const char *op_components[],
+int get_act_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[0], *f2 = op_components[1];
 	const char *f3 = op_components[2];
 	bool is_gact = false;
-	struct action_util *a;
 	__u32 actionindex;
 	__u32 pipeid = 0, actionid = 0;
+	struct action_util *new_act;
 	char buf[256];
 	int rc;
 
@@ -229,13 +229,13 @@ int get_act_type(const char *op_components[],
 			strcpy(buf, "gact");
 		}
 
-		a = get_action_kind(buf);
-		if (!is_gact && strcasecmp(a->id, "gact") == 0) {
+		new_act = get_action_kind(buf);
+		if (!is_gact && strcasecmp(new_act->id, "gact") == 0) {
 			fprintf(stderr, "Invalid action %s:%s\n", f2, f3);
 			return -1;
 		}
 		pipeid = 0;
-		actionid = a->aid;
+		actionid = new_act->aid;
 	} else {
 		if (p4tc_get_act(f1, f2, &pipeid, &actionid) < 0)
 		    return -1;
@@ -255,7 +255,7 @@ int get_act_type(const char *op_components[],
 	return 0;
 }
 
-int get_const_type(const char *op_components[],
+int get_const_type(struct action_util *a, const char *op_components[],
 		   struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
@@ -370,7 +370,7 @@ int get_const_type(const char *op_components[],
 	return 0;
 }
 
-int get_metadata_type(const char *op_components[],
+int get_metadata_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
@@ -416,7 +416,7 @@ int get_metadata_type(const char *op_components[],
 	return 0;
 }
 
-int get_table_type(const char *op_components[],
+int get_table_type(struct action_util *a, const char *op_components[],
 		   struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
@@ -435,7 +435,7 @@ int get_table_type(const char *op_components[],
 	return 0;
 }
 
-int get_hdrfield_type(const char *op_components[],
+int get_hdrfield_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
@@ -471,15 +471,22 @@ int get_hdrfield_type(const char *op_components[],
 	return 0;
 }
 
-int get_act_param_type(const char *op_components[],
+int get_act_param_type(struct action_util *a, const char *op_components[],
 		       struct p4tc_u_operand *op, void **path)
 {
-	const char *pname = op_components[1], *act_name = op_components[2];
-	const char *param_name = op_components[3];
+	const char separator[2] = "/";
+	const char *param_name = op_components[1];
+	char act_name_copy[ACTNAMSIZ];
+	const char *pname;
+	const char *act_name;
 	int param_index = -1;
 	struct p4_param_s params[32];
 	__u32 pipeid, act_id;
 	int i, num_acts;
+
+	strcpy(act_name_copy, a->id);
+	pname = strtok(act_name_copy, separator);
+	act_name = a->id + strlen(pname) + strlen(separator);
 
 	num_acts = p4tc_get_act_params(params, pname, act_name, &pipeid,
 				       &act_id);
@@ -508,8 +515,9 @@ int get_act_param_type(const char *op_components[],
 
 	return 0;
 }
-int get_dev_type(const char *op_components[], struct p4tc_u_operand *op,
-		     void **path)
+
+int get_dev_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1];
 	struct p4_type_s *t;
@@ -532,7 +540,7 @@ int get_dev_type(const char *op_components[], struct p4tc_u_operand *op,
 	return 0;
 }
 
-int get_key_type(const char *op_components[],
+int get_key_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
@@ -582,7 +590,7 @@ int get_key_type(const char *op_components[],
 	return 0;
 }
 
-int get_res_type(const char *op_components[],
+int get_res_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1];
@@ -815,7 +823,7 @@ static int parse_operand_path(char *path, char **components)
         return tokens;
 }
 
-static int populate_oper_path(char *fields[],
+static int populate_oper_path(struct action_util *a, char *fields[],
 			      struct p4tc_u_operand *op,
 			      void *path)
 {
@@ -830,7 +838,7 @@ static int populate_oper_path(char *fields[],
 
 	op->oper_type = o->id;
 
-	if (o->get_opertype((const char **)fields, op, path)) {
+	if (o->get_opertype(a, (const char **)fields, op, path)) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			fields[1], fields[2]);
 		return -1;
@@ -898,7 +906,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	}
 
 	A->oper_type = o->id;
-	if (o->get_opertype((const char **)Af, A, NULL)) {
+	if (o->get_opertype(a, (const char **)Af, A, NULL)) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			Af[1], Af[2]);
 		return -1;
@@ -977,7 +985,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	PREV_ARG();
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -993,7 +1001,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Bpresent) {
-		rc = populate_oper_path(Bcomponents, &ins->opB, &ins->pathB);
+		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
@@ -1002,7 +1010,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Cpresent) {
-		rc = populate_oper_path(Ccomponents, &ins->opC, &ins->pathC);
+		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand C %s\n",
 				Ccomponents[0]);
@@ -1063,7 +1071,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1072,7 +1080,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Bpresent) {
-		rc = populate_oper_path(Bcomponents, &ins->opB, &ins->pathB);
+		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
@@ -1129,7 +1137,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 	if (ins->Apresent) {
 		struct p4tc_u_operand *opA = &ins->opA;
 
-		rc = populate_oper_path(Acomponents, opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1184,7 +1192,7 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1230,7 +1238,7 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 	NEXT_ARG_FWD();
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
