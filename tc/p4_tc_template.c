@@ -1137,6 +1137,7 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		hdr_ty.startbit = field->startbit;
 		hdr_ty.endbit = field->endbit;
 
+		ids[0] = field->parserid;
 		ids[1] = field->id;
 	} else if (hdrfield_id) {
 		ids[1] = hdrfield_id;
