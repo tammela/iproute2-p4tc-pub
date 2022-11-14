@@ -2,7 +2,7 @@
 TCOBJ= tc.o tc_qdisc.o tc_class.o tc_filter.o tc_util.o tc_monitor.o \
        tc_exec.o m_police.o m_estimator.o m_action.o m_ematch.o \
        emp_ematch.tab.o emp_ematch.lex.o p4_types.o p4_tc_template.o \
-       m_dyna.o p4_tc_table.o p4_tc_introspection.o
+       p4_tc_cmds.o m_dyna.o p4_tc_table.o p4_tc_introspection.o
 
 include ../config.mk
 
@@ -56,7 +56,6 @@ TCMODULES += m_tunnel_key.o
 TCMODULES += m_sample.o
 TCMODULES += m_ct.o
 TCMODULES += m_gate.o
-TCMODULES += m_metact.o
 TCMODULES += p_ip.o
 TCMODULES += p_ip6.o
 TCMODULES += p_icmp.o
