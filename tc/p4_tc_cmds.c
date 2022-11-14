@@ -62,6 +62,8 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 				   char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 				     char ***argv_p, struct p4tc_cmds_v *ins);
+static int parse_binarith_operands(struct action_util *a, int *argc_p,
+				   char ***argv_p, struct p4tc_cmds_v *ins);
 
 struct op_type_s {
         int id;
@@ -88,6 +90,13 @@ static struct op_type_s op_types [] = {
 		NULL},
 	{P4TC_CMD_OP_MIRPORTEGR, "mirror_port_egress", parse_sndportegr_operands,
 		NULL},
+	{P4TC_CMD_OP_PLUS, "plus", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_SUB, "sub", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_CONCAT, "concat", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_BAND, "band", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_BOR, "bor", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_BXOR, "bxor", parse_binarith_operands, NULL },
+
 };
 
 static struct op_type_s *get_op_byname(const char *name)
@@ -824,8 +833,7 @@ static int parse_operand_path(char *path, char **components)
 }
 
 static int populate_oper_path(struct action_util *a, char *fields[],
-			      struct p4tc_u_operand *op,
-			      void *path)
+			      struct p4tc_u_operand *op, void *path)
 {
 	struct opnd_type_s *o;
 
@@ -986,7 +994,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Apresent) {
 		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
@@ -1002,7 +1010,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Bpresent) {
 		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
 			return -1;
@@ -1011,7 +1019,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Cpresent) {
 		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "...Invalid operand C %s\n",
 				Ccomponents[0]);
 			return -1;
@@ -1072,7 +1080,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Apresent) {
 		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
@@ -1081,7 +1089,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Bpresent) {
 		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
 			return -1;
@@ -1138,7 +1146,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 		struct p4tc_u_operand *opA = &ins->opA;
 
 		rc = populate_oper_path(a, Acomponents, opA, &ins->pathA);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
@@ -1193,7 +1201,7 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Apresent) {
 		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
@@ -1239,13 +1247,111 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 
 	if (ins->Apresent) {
 		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0 ) {
+		if (rc < 0) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
 		}
 	}
 
+	*argc_p = argc;
+	*argv_p = argv;
+	return 0;
+}
+
+static int parse_binarith_operands(struct action_util *a, int *argc_p,
+				   char ***argv_p, struct p4tc_cmds_v *ins)
+{
+	int num_Acomponents = 0, num_Bcomponents = 0, num_Ccomponents = 0;
+	char *Acomponents[MAX_PATH_COMPONENTS] = { };
+	char *Bcomponents[MAX_PATH_COMPONENTS] = { };
+	char *Ccomponents[MAX_PATH_COMPONENTS] = { };
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	char *argsA, *argsB, *argsC;
+	int rc;
+
+	argsA = strdupa(*argv);
+
+	num_Acomponents = parse_operand_path(argsA, Acomponents);
+	if (num_Acomponents < 3) {
+		fprintf(stderr, "Invalid operand A %s\n", *argv);
+		return -1;
+	}
+
+	ins->Apresent = true;
+
+	if (ins->ins.op_type == P4TC_CMD_OP_ACT)
+		goto done_p_operand;
+
+	NEXT_ARG();
+	argsB = strdupa(*argv);
+
+	num_Bcomponents = parse_operand_path(argsB, Bcomponents);
+	if (num_Bcomponents < 3)
+		return -1;
+
+	ins->Bpresent = true;
+	if (NEXT_ARG_OK()) {
+		NEXT_ARG();
+
+		argsC = strdupa(*argv);
+
+		num_Ccomponents = parse_operand_path(argsC, Ccomponents);
+		if (!argsC || num_Ccomponents < 3)
+			PREV_ARG();
+		else
+			ins->Cpresent = true;
+	}
+
+	NEXT_ARG_FWD();
+	if (*argv && strcmp(*argv, "control") == 0) {
+		struct p4tc_u_operate *op = &ins->ins;
+
+		rc = parse_cmd_control(&argc, &argv, op);
+		if (rc) {
+			fprintf(stderr, "Invalid binarith \"control\"\n");
+			return -1;
+		}
+	}
+	PREV_ARG();
+
+	if (ins->Apresent) {
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
+		if (rc < 0) {
+			fprintf(stderr, "XXX: Invalid operand A %s\n",
+				Acomponents[0]);
+			return -1;
+		}
+
+		if (ins->ins.op_type == P4TC_CMD_OP_SET &&
+		    ins->opA.oper_type == P4TC_OPER_CONST) {
+			fprintf(stderr, "Invalid PLUS const operand A %s\n",
+				Acomponents[0]);
+			return -1;
+		}
+	}
+
+	if (ins->Bpresent) {
+		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
+		if (rc < 0) {
+			fprintf(stderr, "...Invalid operand B %s\n",
+				Bcomponents[0]);
+			return -1;
+		}
+	}
+
+	if (ins->Cpresent) {
+		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
+		if (rc < 0) {
+			fprintf(stderr, "...Invalid operand C %s\n",
+				Ccomponents[0]);
+			return -1;
+		}
+	}
+
+done_p_operand:
+	NEXT_ARG_FWD();
 	*argc_p = argc;
 	*argv_p = argv;
 	return 0;
@@ -1470,6 +1576,102 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			if (ret != 0) {
 				fprintf(stderr, "p4tc_cmds bad <mirror_port_egress>: %d:<%s>\n",
 					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "plus") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_PLUS;
+			op = get_op_byname("plus");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "p4tc_cmds bad <plus>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "sub") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_SUB;
+			op = get_op_byname("sub");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad <sub>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "concat") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_CONCAT;
+			op = get_op_byname("concat");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <concat>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "band") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_BAND;
+			op = get_op_byname("band");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+		argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <band>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "bor") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_BOR;
+			op = get_op_byname("bor");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+		argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <bor>: %d:<%s>\n",
+		argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "bxor") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_BXOR;
+			op = get_op_byname("bxor");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+		argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <bxor>: %d:<%s>\n",
+		argc, *argv);
 				return -1;
 			}
 			continue;
