@@ -1445,6 +1445,24 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 					return -1;
 				}
 				continue;
+			} else if (strcmp(*argv, "default_hit_action") == 0) {
+				argv++;
+				argc--;
+				if (parse_action(&argc, &argv,
+						 P4TC_TCLASS_DEFAULT_HIT | NLA_F_NESTED, n)) {
+					fprintf(stderr, "Illegal action\n");
+					return -1;
+				}
+				continue;
+			} else if (strcmp(*argv, "default_miss_action") == 0) {
+				argv++;
+				argc--;
+				if (parse_action(&argc, &argv,
+						 P4TC_TCLASS_DEFAULT_MISS | NLA_F_NESTED, n)) {
+					fprintf(stderr, "Illegal action\n");
+					return -1;
+				}
+				continue;
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
