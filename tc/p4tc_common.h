@@ -53,10 +53,6 @@ void register_kernel_metadata(void);
 void unregister_kernel_metadata(void);
 void register_new_metadata(struct p4_metat_s *meta);
 void unregister_metadata(struct p4_metat_s *meta);
-int parse_commands(struct action_util *a, int *argc_p, char ***argv_p);
-int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id);
-int print_metact_cmds(FILE *f, struct rtattr *arg);
-int print_metact(struct action_util *au, FILE *f, struct rtattr *arg);
 int fill_user_metadata(struct p4_metat_s metadata[]);
 
 #define STR_IS_EMPTY(str) ((str)[0] == '\0')

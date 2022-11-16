@@ -33,6 +33,7 @@
 #include "tc_common.h"
 #include "p4tc_common.h"
 #include "p4_types.h"
+#include "p4tc_cmds.h"
 
 static void explain(void)
 {
@@ -293,7 +294,7 @@ parse_dyna_cb(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	struct rtattr *tail;
 	int ret;
 
-	NEXT_ARG();
+	NEXT_ARG_FWD();
 	tail = addattr_nest(n, MAX_MSG, tca_id | NLA_F_NESTED);
 	ret = parse_dyna(&argc, &argv, true, NULL, a->id, n);
 	addattr_nest_end(n, tail);
@@ -371,8 +372,52 @@ int print_dyna_parms(struct rtattr *arg, FILE *f)
 	return 0;
 }
 
+static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
+{
+	struct rtattr *tb[P4TC_ACT_MAX + 1];
+	struct tc_act_dyna *p;
+
+	if (arg == NULL)
+		return 0;
+
+	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
+
+	if (tb[P4TC_ACT_NAME])
+		print_string(PRINT_ANY, "kind", "%s ",
+			     RTA_DATA(tb[P4TC_ACT_NAME]));
+	else
+		print_string(PRINT_ANY, "kind", "%s ", "metact");
+
+	if (!tb[P4TC_ACT_PARMS] || !tb[P4TC_ACT_CMDS_LIST]) {
+		fprintf(stderr, "Missing p4tc_cmds parameters\n");
+		return -1;
+	}
+
+	p = RTA_DATA(tb[P4TC_ACT_OPT]);
+	print_uint(PRINT_ANY, "index", " index %u", p->index);
+	print_int(PRINT_ANY, "ref", " ref %d", p->refcnt);
+	print_int(PRINT_ANY, "bind", " bind %d", p->bindcnt);
+
+	if (show_stats) {
+		if (tb[P4TC_ACT_TM]) {
+			struct tcf_t *tm = RTA_DATA(tb[P4TC_ACT_TM]);
+
+			print_tm(f, tm);
+		}
+	}
+
+	if (tb[P4TC_ACT_PARMS]) {
+		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
+		open_json_array(PRINT_JSON, "params");
+		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	return p4tc_print_cmds(f, tb[P4TC_ACT_CMDS_LIST]);
+}
+
 struct action_util dyna_action_util = {
 	.id = "dyna",
 	.parse_aopt = parse_dyna_cb,
-	.print_aopt = print_metact,
+	.print_aopt = print_dyna,
 };

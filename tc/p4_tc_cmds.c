@@ -1,5 +1,5 @@
 /*
- * m_metact.c             P4 metact action
+ * p4_tc_cmds.c             P4 TC commands
  *
  *              This program is free software; you can distribute it and/or
  *              modify it under the terms of the GNU General Public License
@@ -28,17 +28,18 @@
 #include "p4_types.h"
 #include "p4tc_common.h"
 #include "p4tc_introspection.h"
-#include <linux/tc_act/tc_metact.h>
+#include "p4tc_cmds.h"
+#include <linux/p4tc.h>
 
 #ifndef MAX_PATH_COMPONENTS
 #define MAX_PATH_COMPONENTS 5
 #endif
 
-struct p4_metact_ins_v {
-	struct tca_u_meta_operate ins;
-        struct tca_u_meta_operand opA;
-        struct tca_u_meta_operand opB;
-        struct tca_u_meta_operand opC;
+struct p4tc_cmds_v {
+	struct p4tc_u_operate ins;
+	struct p4tc_u_operand opA;
+	struct p4tc_u_operand opB;
+	struct p4tc_u_operand opC;
 	void *pathA;
 	void *pathB;
 	void *pathC;
@@ -47,59 +48,45 @@ struct p4_metact_ins_v {
 	bool Cpresent;
 };
 
-static struct p4_metact_ins_v INS[TCA_METACT_LIST_MAX];
-
-static void explain(void)
-{
-	fprintf(stderr,
-		"Usage: metact ... [index INDEX] \n"
-		"where:\n"
-		"\tINDEX  is the specific policy instance id\n");
-}
-
-static void usage(void)
-{
-	explain();
-	exit(-1);
-}
+static struct p4tc_cmds_v INS[P4TC_CMDS_LIST_MAX];
 
 static int parse_set_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins);
+			      char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_act_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins);
+			      char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_brn_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins);
+			      char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_print_operands(struct action_util *a, int *argc_p,
-				char ***argv_p, struct p4_metact_ins_v *ins);
+				char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_tblapp_operands(struct action_util *a, int *argc_p,
-				   char ***argv_p, struct p4_metact_ins_v *ins);
+				   char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
-				     char ***argv_p, struct p4_metact_ins_v *ins);
+				     char ***argv_p, struct p4tc_cmds_v *ins);
 
 struct op_type_s {
         int id;
         const char *name;
 	int (*parse_operands)(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins);
-	void (*print_op)(struct tca_u_meta_operand *oper,
+			      char ***argv_p, struct p4tc_cmds_v *ins);
+	void (*print_op)(struct p4tc_u_operand *oper,
 			 void *oppath, FILE *f);
 };
 
 static struct op_type_s op_types [] = {
-	{METACT_OP_SET, "set", parse_set_operands, NULL},
-	{METACT_OP_ACT, "act", parse_act_operands, NULL},
-	{METACT_OP_BEQ, "beq", parse_brn_operands, NULL},
-	{METACT_OP_BNE, "bne", parse_brn_operands, NULL},
-	{METACT_OP_BNE, "bne", parse_brn_operands, NULL},
-	{METACT_OP_BGT, "bgt", parse_brn_operands, NULL},
-	{METACT_OP_BLT, "blt", parse_brn_operands, NULL},
-	{METACT_OP_BGE, "bge", parse_brn_operands, NULL},
-	{METACT_OP_BLE, "ble", parse_brn_operands, NULL},
-	{METACT_OP_PRINT, "print", parse_print_operands, NULL},
-	{METACT_OP_TBLAPP, "tableapply", parse_tblapp_operands, NULL},
-	{METACT_OP_SNDPORTEGR, "send_port_egress", parse_sndportegr_operands,
+	{P4TC_CMD_OP_SET, "set", parse_set_operands, NULL},
+	{P4TC_CMD_OP_ACT, "act", parse_act_operands, NULL},
+	{P4TC_CMD_OP_BEQ, "beq", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BNE, "bne", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BNE, "bne", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BGT, "bgt", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BLT, "blt", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BGE, "bge", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_BLE, "ble", parse_brn_operands, NULL},
+	{P4TC_CMD_OP_PRINT, "print", parse_print_operands, NULL},
+	{P4TC_CMD_OP_TBLAPP, "tableapply", parse_tblapp_operands, NULL},
+	{P4TC_CMD_OP_SNDPORTEGR, "send_port_egress", parse_sndportegr_operands,
 		NULL},
-	{METACT_OP_MIRPORTEGR, "mirror_port_egress", parse_sndportegr_operands,
+	{P4TC_CMD_OP_MIRPORTEGR, "mirror_port_egress", parse_sndportegr_operands,
 		NULL},
 };
 
@@ -133,65 +120,65 @@ struct opnd_type_s {
         int id;
         int type_id;
         const char *name;
-	int (*get_opertype)(const char *op_components[],
-			    struct tca_u_meta_operand *op, void **path);
-	void (*print_opertype)(struct tca_u_meta_operand *oper, void *oppath,
+	int (*get_opertype)(struct action_util *a, const char *op_components[],
+			    struct p4tc_u_operand *op, void **path);
+	void (*print_opertype)(struct p4tc_u_operand *oper, void *oppath,
 			       FILE *f);
 };
 
-int get_metadata_type(const char *op_components[],
-		      struct tca_u_meta_operand *op, void **path);
-int get_key_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path);
-int get_const_type(const char *op_components[],
-		   struct tca_u_meta_operand *op, void **path);
-int get_act_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path);
-int get_table_type(const char *op_components[],
-		   struct tca_u_meta_operand *op, void **path);
-int get_res_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path);
-int get_hdrfield_type(const char *op_components[],
-		      struct tca_u_meta_operand *op, void **path);
-int get_act_param_type(const char *op_components[],
-		       struct tca_u_meta_operand *op, void **path);
-int get_dev_type(const char *op_components[], struct tca_u_meta_operand *op,
-		 void **path);
+int get_metadata_type(struct action_util *a, const char *op_components[],
+		      struct p4tc_u_operand *op, void **path);
+int get_key_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path);
+int get_const_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_operand *op, void **path);
+int get_act_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path);
+int get_table_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_operand *op, void **path);
+int get_res_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path);
+int get_hdrfield_type(struct action_util *a, const char *op_components[],
+		      struct p4tc_u_operand *op, void **path);
+int get_act_param_type(struct action_util *a, const char *op_components[],
+		       struct p4tc_u_operand *op, void **path);
+int get_dev_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path);
 
-static void print_constant_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f);
-static void print_metadata_type(struct tca_u_meta_operand *oper,
+static void print_metadata_type(struct p4tc_u_operand *oper,
 				void *oppath, FILE *f);
-static void print_act_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_act_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f);
-static void print_key_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_key_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f);
-static void print_table_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_table_type(struct p4tc_u_operand *oper, void *oppath,
 			     FILE *f);
-static void print_res_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_res_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f);
-static void print_hdrfield_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_hdrfield_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f);
-static void print_dev_type(struct tca_u_meta_operand *oper, void *oppath,
-			       FILE *f);
-static void print_act_param_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
+			   FILE *f);
+static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
 				 FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
-	{METACT_OPER_META, P4T_PATH, "metadata", get_metadata_type,
+	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
 	 print_metadata_type},
-	{METACT_OPER_HDRFIELD, P4T_PATH, "hdrfield", get_hdrfield_type,
-		print_hdrfield_type},
-	{METACT_OPER_KEY, P4T_PATH, "key", get_key_type, print_key_type },
-	{METACT_OPER_CONST, P4T_UNSPEC, "constant", get_const_type,
+	{P4TC_OPER_HDRFIELD, P4T_PATH, "hdrfield", get_hdrfield_type,
+	 print_hdrfield_type},
+	{P4TC_OPER_KEY, P4T_PATH, "key", get_key_type, print_key_type },
+	{P4TC_OPER_CONST, P4T_UNSPEC, "constant", get_const_type,
 	 print_constant_type},
-	{METACT_OPER_ACTID, P4T_U32, "act", get_act_type,
+	{P4TC_OPER_ACTID, P4T_U32, "act", get_act_type,
 	 print_act_type},
-	{METACT_OPER_TBL, P4T_PATH, "table", get_table_type, print_table_type },
-	{METACT_OPER_RES, P4T_PATH, "results", get_res_type, print_res_type },
-	{METACT_OPER_PARAM, P4T_PATH, "param", get_act_param_type,
+	{P4TC_OPER_TBL, P4T_PATH, "table", get_table_type, print_table_type },
+	{P4TC_OPER_RES, P4T_PATH, "results", get_res_type, print_res_type },
+	{P4TC_OPER_PARAM, P4T_PATH, "param", get_act_param_type,
 	 print_act_param_type},
-	{METACT_OPER_CONST, P4T_PATH, "dev", get_dev_type,
+	{P4TC_OPER_CONST, P4T_PATH, "dev", get_dev_type,
 	 print_dev_type},
 };
 
@@ -222,15 +209,15 @@ static struct opnd_type_s *get_optype_byid(int id)
 	return NULL;
 }
 
-int get_act_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path)
+int get_act_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[0], *f2 = op_components[1];
 	const char *f3 = op_components[2];
 	bool is_gact = false;
-	struct action_util *a;
 	__u32 actionindex;
 	__u32 pipeid = 0, actionid = 0;
+	struct action_util *new_act;
 	char buf[256];
 	int rc;
 
@@ -242,13 +229,13 @@ int get_act_type(const char *op_components[],
 			strcpy(buf, "gact");
 		}
 
-		a = get_action_kind(buf);
-		if (!is_gact && strcasecmp(a->id, "gact") == 0) {
+		new_act = get_action_kind(buf);
+		if (!is_gact && strcasecmp(new_act->id, "gact") == 0) {
 			fprintf(stderr, "Invalid action %s:%s\n", f2, f3);
 			return -1;
 		}
 		pipeid = 0;
-		actionid = a->aid;
+		actionid = new_act->aid;
 	} else {
 		if (p4tc_get_act(f1, f2, &pipeid, &actionid) < 0)
 		    return -1;
@@ -260,7 +247,7 @@ int get_act_type(const char *op_components[],
 	}
 
 	op->pipeid = pipeid;
-	op->oper_datatype = METACT_OPER_ACTID;
+	op->oper_datatype = P4TC_OPER_ACTID;
 	op->immedv = actionid;
 	op->immedv2 = actionindex;
 	op->oper_cbitsize = 32;
@@ -268,8 +255,8 @@ int get_act_type(const char *op_components[],
 	return 0;
 }
 
-int get_const_type(const char *op_components[],
-		   struct tca_u_meta_operand *op, void **path)
+int get_const_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	bool isslice = false, israw = false;
@@ -383,8 +370,8 @@ int get_const_type(const char *op_components[],
 	return 0;
 }
 
-int get_metadata_type(const char *op_components[],
-		      struct tca_u_meta_operand *op, void **path)
+int get_metadata_type(struct action_util *a, const char *op_components[],
+		      struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	struct p4_metat_s *m = NULL;
@@ -429,8 +416,8 @@ int get_metadata_type(const char *op_components[],
 	return 0;
 }
 
-int get_table_type(const char *op_components[],
-		   struct tca_u_meta_operand *op, void **path)
+int get_table_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	__u32 pipeid = 0, tbcid = 0;
@@ -448,8 +435,8 @@ int get_table_type(const char *op_components[],
 	return 0;
 }
 
-int get_hdrfield_type(const char *op_components[],
-		      struct tca_u_meta_operand *op, void **path)
+int get_hdrfield_type(struct action_util *a, const char *op_components[],
+		      struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	const char *f3 = op_components[3], *f4 = op_components[4];
@@ -484,15 +471,22 @@ int get_hdrfield_type(const char *op_components[],
 	return 0;
 }
 
-int get_act_param_type(const char *op_components[],
-		       struct tca_u_meta_operand *op, void **path)
+int get_act_param_type(struct action_util *a, const char *op_components[],
+		       struct p4tc_u_operand *op, void **path)
 {
-	const char *pname = op_components[1], *act_name = op_components[2];
-	const char *param_name = op_components[3];
+	const char separator[2] = "/";
+	const char *param_name = op_components[1];
+	char act_name_copy[ACTNAMSIZ];
+	const char *pname;
+	const char *act_name;
 	int param_index = -1;
 	struct p4_param_s params[32];
 	__u32 pipeid, act_id;
 	int i, num_acts;
+
+	strcpy(act_name_copy, a->id);
+	pname = strtok(act_name_copy, separator);
+	act_name = a->id + strlen(pname) + strlen(separator);
 
 	num_acts = p4tc_get_act_params(params, pname, act_name, &pipeid,
 				       &act_id);
@@ -521,8 +515,9 @@ int get_act_param_type(const char *op_components[],
 
 	return 0;
 }
-int get_dev_type(const char *op_components[], struct tca_u_meta_operand *op,
-		     void **path)
+
+int get_dev_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1];
 	struct p4_type_s *t;
@@ -545,8 +540,8 @@ int get_dev_type(const char *op_components[], struct tca_u_meta_operand *op,
 	return 0;
 }
 
-int get_key_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path)
+int get_key_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	const char *f3 = op_components[3];
@@ -595,16 +590,16 @@ int get_key_type(const char *op_components[],
 	return 0;
 }
 
-int get_res_type(const char *op_components[],
-		 struct tca_u_meta_operand *op, void **path)
+int get_res_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_operand *op, void **path)
 {
 	const char *f1 = op_components[1];
 	struct p4_type_s *type;
 
 	if (strcmp(f1, "hit") == 0) {
-		op->immedv = METACT_RESULTS_HIT;
+		op->immedv = P4TC_CMDS_RESULTS_HIT;
 	} else if (strcmp(f1, "miss") == 0) {
-		op->immedv = METACT_RESULTS_MISS;
+		op->immedv = P4TC_CMDS_RESULTS_MISS;
 	} else {
 		fprintf(stderr, "Unknown results field %s\n", f1);
 		return -1;
@@ -620,7 +615,7 @@ int get_res_type(const char *op_components[],
 	return 0;
 }
 
-static void print_operation(struct tca_u_meta_operate *ins, FILE *f)
+static void print_operation(struct p4tc_u_operate *ins, FILE *f)
 {
 	struct op_type_s *op = get_op_byid(ins->op_type);
 
@@ -636,7 +631,7 @@ static void print_operation(struct tca_u_meta_operate *ins, FILE *f)
 	print_action_control(f, " / ", ins->op_ctl2, "\n");
 }
 
-static void print_constant_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
@@ -666,7 +661,7 @@ static void print_constant_type(struct tca_u_meta_operand *oper, void *oppath,
 }
 
 
-static void print_key_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_key_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f)
 {
 	struct p4_type_s *type;
@@ -682,13 +677,13 @@ static void print_key_type(struct tca_u_meta_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "container", "\t    container %s", type->name);
 }
 
-static void print_table_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_table_type(struct p4tc_u_operand *oper, void *oppath,
 			     FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s", "table");
 }
 
-static void print_hdrfield_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_hdrfield_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f)
 {
 	struct p4_type_s *type;
@@ -704,7 +699,7 @@ static void print_hdrfield_type(struct tca_u_meta_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "container", "\t    container %s", type->name);
 }
 
-static void print_dev_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f)
 {
 	int ifindex = oper->immedv;
@@ -714,17 +709,17 @@ static void print_dev_type(struct tca_u_meta_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "dev", "\t    dev %s", ifname);
 }
 
-static void print_res_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_res_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "result");
-	if (oper->immedv == METACT_RESULTS_HIT)
+	if (oper->immedv == P4TC_CMDS_RESULTS_HIT)
 		print_string(PRINT_ANY, "result", "\t    results.%s", "hit");
 	else
 		print_string(PRINT_ANY, "result", "\t    results.%s", "miss");
 }
 
-static void print_act_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_act_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f)
 {
 	discover_actions();
@@ -746,7 +741,7 @@ static void print_act_type(struct tca_u_meta_operand *oper, void *oppath,
 	}
 }
 
-static void print_act_param_type(struct tca_u_meta_operand *oper, void *oppath,
+static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
 				 FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "param");
@@ -756,7 +751,7 @@ static void print_act_param_type(struct tca_u_meta_operand *oper, void *oppath,
 	print_uint(PRINT_ANY, "paramid", "\t    param id %u", oper->immedv2);
 }
 
-static void print_metadata_type(struct tca_u_meta_operand *oper,
+static void print_metadata_type(struct p4tc_u_operand *oper,
 				void *oppath, FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
@@ -784,7 +779,7 @@ static void print_metadata_type(struct tca_u_meta_operand *oper,
 }
 
 static void print_operand_content(const char *ABC,
-				  struct tca_u_meta_operand *oper,
+				  struct p4tc_u_operand *oper,
 				  void *oppath, FILE *f)
 {
 	struct opnd_type_s *o;
@@ -828,8 +823,8 @@ static int parse_operand_path(char *path, char **components)
         return tokens;
 }
 
-static int populate_oper_path(char *fields[],
-			      struct tca_u_meta_operand *op,
+static int populate_oper_path(struct action_util *a, char *fields[],
+			      struct p4tc_u_operand *op,
 			      void *path)
 {
 	struct opnd_type_s *o;
@@ -843,7 +838,7 @@ static int populate_oper_path(char *fields[],
 
 	op->oper_type = o->id;
 
-	if (o->get_opertype((const char **)fields, op, path)) {
+	if (o->get_opertype(a, (const char **)fields, op, path)) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			fields[1], fields[2]);
 		return -1;
@@ -853,7 +848,7 @@ static int populate_oper_path(char *fields[],
 }
 
 static int parse_cmd_control(int *argc_p, char ***argv_p,
-			     struct tca_u_meta_operate *op)
+			     struct p4tc_u_operate *op)
 {
 	char **argv = *argv_p;
 	int argc = *argc_p;
@@ -883,9 +878,9 @@ static int parse_cmd_control(int *argc_p, char ***argv_p,
 }
 
 static int parse_act_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins)
+			      char ***argv_p, struct p4tc_cmds_v *ins)
 {
-	struct tca_u_meta_operand *A = &ins->opA;
+	struct p4tc_u_operand *A = &ins->opA;
 	char *Af[MAX_PATH_COMPONENTS] = { };
 	int num_Acomponents = 0;
 	char **argv = *argv_p;
@@ -903,7 +898,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 
 	ins->Apresent = true;
 
-	o = get_optype_byid(METACT_OPER_ACTID);
+	o = get_optype_byid(P4TC_OPER_ACTID);
 	if (!o) {
 		fprintf(stderr, "Invalid action datatype %s\n",
 			Af[0]);
@@ -911,7 +906,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	}
 
 	A->oper_type = o->id;
-        if (o->get_opertype((const char **)Af, A, NULL)) {
+	if (o->get_opertype(a, (const char **)Af, A, NULL)) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			Af[1], Af[2]);
 		return -1;
@@ -919,7 +914,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
-		struct tca_u_meta_operate *op = &ins->ins;
+		struct p4tc_u_operate *op = &ins->ins;
 		int rc = parse_cmd_control(&argc, &argv, op);
 
 		if (rc) {
@@ -934,7 +929,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 }
 
 static int parse_set_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins)
+			      char ***argv_p, struct p4tc_cmds_v *ins)
 {
 	int num_Acomponents = 0, num_Bcomponents = 0, num_Ccomponents = 0;
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
@@ -955,7 +950,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 
 	ins->Apresent = true;
 
-	if (ins->ins.op_type == METACT_OP_ACT)
+	if (ins->ins.op_type == P4TC_CMD_OP_ACT)
 		goto done_p_operand;
 
 	NEXT_ARG();
@@ -980,7 +975,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
-		struct tca_u_meta_operate *op = &ins->ins;
+		struct p4tc_u_operate *op = &ins->ins;
 		rc = parse_cmd_control(&argc, &argv, op);
 		if (rc) {
 			fprintf(stderr, "Invalid set \"control\"\n");
@@ -990,15 +985,15 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	PREV_ARG();
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
 		}
 
-		if (ins->ins.op_type == METACT_OP_SET &&
-		    ins->opA.oper_type == METACT_OPER_CONST) {
+		if (ins->ins.op_type == P4TC_CMD_OP_SET &&
+		    ins->opA.oper_type == P4TC_OPER_CONST) {
 			fprintf(stderr, "Invalid SET const operand A %s\n",
 				Acomponents[0]);
 			return -1;
@@ -1006,7 +1001,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Bpresent) {
-		rc = populate_oper_path(Bcomponents, &ins->opB, &ins->pathB);
+		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
@@ -1015,7 +1010,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Cpresent) {
-		rc = populate_oper_path(Ccomponents, &ins->opC, &ins->pathC);
+		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand C %s\n",
 				Ccomponents[0]);
@@ -1031,12 +1026,12 @@ done_p_operand:
 }
 
 static int parse_brn_operands(struct action_util *a, int *argc_p,
-			      char ***argv_p, struct p4_metact_ins_v *ins)
+			      char ***argv_p, struct p4tc_cmds_v *ins)
 {
 	int num_Acomponents = 0, num_Bcomponents = 0;
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
 	char *Bcomponents[MAX_PATH_COMPONENTS] = { };
-	struct tca_u_meta_operate *op = &ins->ins;
+	struct p4tc_u_operate *op = &ins->ins;
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	char *argsA, *argsB;
@@ -1076,7 +1071,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1085,7 +1080,7 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Bpresent) {
-		rc = populate_oper_path(Bcomponents, &ins->opB, &ins->pathB);
+		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
 		if (rc < 0 ) {
 			fprintf(stderr, "...Invalid operand B %s\n",
 				Bcomponents[0]);
@@ -1099,10 +1094,10 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 }
 
 static int parse_print_operands(struct action_util *a, int *argc_p,
-				char ***argv_p, struct p4_metact_ins_v *ins)
+				char ***argv_p, struct p4tc_cmds_v *ins)
 {
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
-	char prefix[METACT_MAX_OPER_PATH_LEN];
+	char prefix[P4TC_CMD_MAX_OPER_PATH_LEN];
 	int num_Acomponents = 0;
 	bool set_prefix = false;
 	char **argv = *argv_p;
@@ -1113,7 +1108,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 	if (strcmp(*argv, "prefix") == 0) {
 		NEXT_ARG();
 		set_prefix = true;
-		strlcpy(prefix, *argv, METACT_MAX_OPER_PATH_LEN);
+		strlcpy(prefix, *argv, P4TC_CMD_MAX_OPER_PATH_LEN);
 		NEXT_ARG();
 	}
 
@@ -1129,7 +1124,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
-		struct tca_u_meta_operate *op = &ins->ins;
+		struct p4tc_u_operate *op = &ins->ins;
 
 		rc = parse_cmd_control(&argc, &argv, op);
 		if (rc) {
@@ -1140,9 +1135,9 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 	PREV_ARG();
 
 	if (ins->Apresent) {
-		struct tca_u_meta_operand *opA = &ins->opA;
+		struct p4tc_u_operand *opA = &ins->opA;
 
-		rc = populate_oper_path(Acomponents, opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1150,12 +1145,12 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 		}
 
 		if (set_prefix) {
-			ins->pathA = calloc(METACT_MAX_OPER_PATH_LEN, sizeof(char));
+			ins->pathA = calloc(P4TC_CMD_MAX_OPER_PATH_LEN, sizeof(char));
 			if (!ins->pathA) {
 				fprintf(stderr, "Unable to allocate path\n");
 				return -1;
 			}
-			strncpy(ins->pathA, prefix, METACT_MAX_OPER_PATH_LEN);
+			strncpy(ins->pathA, prefix, P4TC_CMD_MAX_OPER_PATH_LEN);
 		}
 	}
 
@@ -1166,7 +1161,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 }
 
 static int parse_tblapp_operands(struct action_util *a, int *argc_p,
-				 char ***argv_p, struct p4_metact_ins_v *ins)
+				 char ***argv_p, struct p4tc_cmds_v *ins)
 {
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
 	int num_Acomponents = 0;
@@ -1197,20 +1192,20 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 	}
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
 			return -1;
 		}
 
-		if (ins->opA.oper_type != METACT_OPER_TBL) {
+		if (ins->opA.oper_type != P4TC_OPER_TBL) {
 			fprintf(stderr, "Table apply operand must be a table\n");
 			return -1;
 		}
 		ins->opA.oper_startbit = 0;
 		ins->opA.oper_endbit = 0;
-		ins->opA.oper_datatype = METACT_OPER_TBL;
+		ins->opA.oper_datatype = P4TC_OPER_TBL;
 
 		ins->opA.immedv2 = keyid;
 	}
@@ -1221,7 +1216,7 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 }
 
 static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
-				     char ***argv_p, struct p4_metact_ins_v *ins)
+				     char ***argv_p, struct p4tc_cmds_v *ins)
 {
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
 	int num_Acomponents = 0;
@@ -1243,7 +1238,7 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 	NEXT_ARG_FWD();
 
 	if (ins->Apresent) {
-		rc = populate_oper_path(Acomponents, &ins->opA, &ins->pathA);
+		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
 		if (rc < 0 ) {
 			fprintf(stderr, "XXX: Invalid operand A %s\n",
 				Acomponents[0]);
@@ -1256,13 +1251,13 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 	return 0;
 }
 
-int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
+int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 {
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	int ins_cnt = -1;
 	int ret = 0;
-	struct p4_metact_ins_v *ins = NULL;
+	struct p4tc_cmds_v *ins = NULL;
 	struct op_type_s *op = NULL;
 
 	while (argc > 0) {
@@ -1270,9 +1265,9 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 		if (strcmp(*argv, "cmd") == 0) {
                         NEXT_ARG();
 			ins_cnt++;
-			if (ins_cnt > TCA_METACT_LIST_MAX) {
-				fprintf(stderr, "metact too many ins: %d>%d\n",
-					ins_cnt, TCA_METACT_LIST_MAX);
+			if (ins_cnt > P4TC_CMDS_LIST_MAX) {
+				fprintf(stderr, "p4tc_cmds too many ins: %d>%d\n",
+					ins_cnt, P4TC_CMDS_LIST_MAX);
 				return -1;
 			}
 			ins = &INS[ins_cnt];
@@ -1281,16 +1276,16 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 
 		} else if (strcmp(*argv, "set") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_SET;
+			ins->ins.op_type = P4TC_CMD_OP_SET;
 			op = get_op_byname("set");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <set>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <set>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1298,10 +1293,10 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 
 		} else if (strcmp(*argv, "act") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_ACT;
+			ins->ins.op_type = P4TC_CMD_OP_ACT;
 			op = get_op_byname("act");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1310,7 +1305,7 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 			print_known_actions();
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <act>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <act>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1318,16 +1313,16 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 
 		} else if (strcmp(*argv, "beq") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BEQ;
+			ins->ins.op_type = P4TC_CMD_OP_BEQ;
 			op = get_op_byname("beq");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <beq>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <beq>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1335,112 +1330,112 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 
 		} else if (strcmp(*argv, "bne") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BNE;
+			ins->ins.op_type = P4TC_CMD_OP_BNE;
 			op = get_op_byname("bne");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <bne>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <bne>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "bgt") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BGT;
+			ins->ins.op_type = P4TC_CMD_OP_BGT;
 			op = get_op_byname("bgt");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <bgt>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <bgt>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "blt") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BLT;
+			ins->ins.op_type = P4TC_CMD_OP_BLT;
 			op = get_op_byname("blt");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <blt>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <blt>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "bge") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BGE;
+			ins->ins.op_type = P4TC_CMD_OP_BGE;
 			op = get_op_byname("bge");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <bge>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <bge>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "ble") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_BLE;
+			ins->ins.op_type = P4TC_CMD_OP_BLE;
 			op = get_op_byname("ble");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <ble>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <ble>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "print") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_PRINT;
+			ins->ins.op_type = P4TC_CMD_OP_PRINT;
 			op = get_op_byname("print");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <print>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <print>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "tableapply") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_TBLAPP;
+			ins->ins.op_type = P4TC_CMD_OP_TBLAPP;
 			op = get_op_byname("tableapply");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <tableapply>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <tableapply>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1448,32 +1443,32 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 
 		} else if (strcmp(*argv, "send_port_egress") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_SNDPORTEGR;
+			ins->ins.op_type = P4TC_CMD_OP_SNDPORTEGR;
 			op = get_op_byname("send_port_egress");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <send_port_egress>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <send_port_egress>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			continue;
 		} else if (strcmp(*argv, "mirror_port_egress") == 0) {
                         NEXT_ARG();
-			ins->ins.op_type = METACT_OP_MIRPORTEGR;
+			ins->ins.op_type = P4TC_CMD_OP_MIRPORTEGR;
 			op = get_op_byname("mirror_port_egress");
 			if (!op) {
-				fprintf(stderr, "metact unknown cmd: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
-				fprintf(stderr, "metact bad <mirror_port_egress>: %d:<%s>\n",
+				fprintf(stderr, "p4tc_cmds bad <mirror_port_egress>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
@@ -1484,7 +1479,7 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 		} else if (strcmp(*argv, "defact") == 0) {
 			break;
 		} else {
-			fprintf(stderr, "metact: bad command %d:<%s>\n",
+			fprintf(stderr, "p4tc_cmds: bad command %d:<%s>\n",
 				argc, *argv);
 			return -1;
 		}
@@ -1502,9 +1497,9 @@ int parse_commands(struct action_util *a, int *argc_p, char ***argv_p)
 	return ins_cnt;
 }
 
-int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id)
+int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 {
-	struct p4_metact_ins_v *ins = NULL;
+	struct p4tc_cmds_v *ins = NULL;
 	struct rtattr *tailoperA, *tailoperB, *tailoperC;
 	struct rtattr *tailinsl, *tailins;
 	int b2B;
@@ -1516,47 +1511,47 @@ int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id)
 
 	tailinsl = addattr_nest(n, MAX_MSG, tca_id | NLA_F_NESTED);
 	for (i = 0; i < ins_cnt; i++) {
-		tailins = addattr_nest(n, MAX_MSG, i+1 | NLA_F_NESTED);
+		tailins = addattr_nest(n, MAX_MSG, (i + 1) | NLA_F_NESTED);
 
 		ins = &INS[i];
 
-		addattr_l(n, MAX_MSG, TCAA_METACT_OPERATION, &ins->ins,
-			  sizeof(struct tca_u_meta_operate));
+		addattr_l(n, MAX_MSG, P4TC_CMD_OPERATION, &ins->ins,
+			  sizeof(struct p4tc_u_operate));
 
 		if (ins->Apresent) {
-			tailoperA = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_A | NLA_F_NESTED);
+			tailoperA = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_A | NLA_F_NESTED);
 
 			if (ins->pathA) {
-				addattrstrz(n, MAX_MSG, TCAA_METACT_OPND_PATH,
+				addattrstrz(n, MAX_MSG, P4TC_CMD_OPND_PATH,
 					    ins->pathA);
 				free(ins->pathA);
 			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opA,
-				  sizeof(struct tca_u_meta_operand));
+			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opA,
+				  sizeof(struct p4tc_u_operand));
 			addattr_nest_end(n, tailoperA);
 		}
 
 		if (ins->Bpresent) {
-			tailoperB = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_B | NLA_F_NESTED);
+			tailoperB = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_B | NLA_F_NESTED);
 			if (ins->pathB) {
 				b2B = (((ins->opB.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, TCAA_METACT_OPND_PATH,
+				addattr_l(n, MAX_MSG, P4TC_CMD_OPND_PATH,
 					  ins->pathB, b2B);
 			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opB,
-				  sizeof(struct tca_u_meta_operand));
+			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opB,
+				  sizeof(struct p4tc_u_operand));
 			addattr_nest_end(n, tailoperB);
 		}
 
 		if (ins->Cpresent) {
-			tailoperC = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_C | NLA_F_NESTED);
+			tailoperC = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_C | NLA_F_NESTED);
 			if (ins->pathC) {
 				b2B = (((ins->opC.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, TCAA_METACT_OPND_PATH,
+				addattr_l(n, MAX_MSG, P4TC_CMD_OPND_PATH,
 					  ins->pathC, b2B);
 			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opC,
-				  sizeof(struct tca_u_meta_operand));
+			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opC,
+				  sizeof(struct p4tc_u_operand));
 			addattr_nest_end(n, tailoperC);
 		}
 
@@ -1567,186 +1562,46 @@ int add_commands(struct nlmsghdr *n, int ins_cnt, int tca_id)
 	return 0;
 }
 
-static int parse_metact(struct action_util *a, int *argc_p, char ***argv_p,
-			int tca_id, struct nlmsghdr *n)
-{
-	struct p4_metat_s metadata[32];
-	struct tc_metact p = {};
-	char **argv = *argv_p;
-	int ret = 0, i = 0;
-	int argc = *argc_p;
-	struct rtattr *tailoperA, *tailoperB, *tailoperC;
-	struct rtattr *tailma, *tailinsl, *tailins;
-	struct p4_metact_ins_v *ins;
-	int ins_cnt;
-	int b2B;
-
-	if (argc < 0) {
-		fprintf(stderr, "metact bad argument count %d\n", argc);
-		return -1;
-	}
-
-	if (matches(*argv, "metact") == 0) {
-		NEXT_ARG();
-	} else if (matches(*argv, "help") == 0) {
-		usage();
-	} else {
-		fprintf(stderr, "metact bad argument %s\n", *argv);
-		return -1;
-	}
-
-	register_kernel_metadata();
-	if (fill_user_metadata(metadata) < 0)
-		return -1;
-
-	ins_cnt = parse_commands(a, &argc, &argv);
-	if (ins_cnt < 0) {
-		ret = ins_cnt;
-		goto unregister_meta;
-	}
-
-	ret = 0;
-
-	p.action = TC_ACT_PIPE;
-	if (*argv && matches(*argv, "defact") == 0) {
-		NEXT_ARG();
-		ret = parse_action_control(&argc, &argv, &p.action, false);
-
-		if (ret < 0) {
-			fprintf(stderr, "metact bad default action %s\n",
-				*argv);
-			ret = -1;
-			goto unregister_meta;
-		}
-	}
-
-	if (argc) {
-		if (strcmp(*argv, "index") == 0) {
-			NEXT_ARG();
-			if (get_u32(&p.index, *argv, 10)) {
-				fprintf(stderr, "metact: Illegal \"index\"\n");
-				ret = -1;
-				goto unregister_meta;
-			}
-			argc--;
-			argv++;
-		}
-	}
-
-	tailma = addattr_nest(n, MAX_MSG, tca_id | NLA_F_NESTED);
-
-	addattr_l(n, MAX_MSG, TCA_METACT_PARMS, &p, sizeof(p));
-
-	if (ins_cnt)
-		tailinsl = addattr_nest(n, MAX_MSG, TCA_METACT_LIST | NLA_F_NESTED);
-	else
-		goto skip_ins_encoding;
-
-	for (i = 0; i < ins_cnt; i++) {
-		tailins = addattr_nest(n, MAX_MSG, i+1 | NLA_F_NESTED);
-
-		ins = &INS[i];
-
-		addattr_l(n, MAX_MSG, TCAA_METACT_OPERATION, &ins->ins,
-			  sizeof(struct tca_u_meta_operate));
-
-		if (ins->Apresent) {
-			tailoperA = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_A | NLA_F_NESTED);
-
-			if (ins->pathA) {
-				addattrstrz(n, MAX_MSG, TCAA_METACT_OPND_PATH,
-					    ins->pathA);
-				free(ins->pathA);
-			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opA,
-				  sizeof(struct tca_u_meta_operand));
-			addattr_nest_end(n, tailoperA);
-		}
-
-		if (ins->Bpresent) {
-			tailoperB = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_B | NLA_F_NESTED);
-			if (ins->pathB) {
-				b2B = (((ins->opB.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, TCAA_METACT_OPND_PATH,
-					  ins->pathB, b2B);
-			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opB,
-				  sizeof(struct tca_u_meta_operand));
-			addattr_nest_end(n, tailoperB);
-		}
-
-		if (ins->Cpresent) {
-			tailoperC = addattr_nest(n, MAX_MSG, TCAA_METACT_OPER_C | NLA_F_NESTED);
-			if (ins->pathC) {
-				b2B = (((ins->opC.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, TCAA_METACT_OPND_PATH,
-					  ins->pathC, b2B);
-			}
-			addattr_l(n, MAX_MSG, TCAA_METACT_OPND_INFO, &ins->opC,
-				  sizeof(struct tca_u_meta_operand));
-			addattr_nest_end(n, tailoperC);
-		}
-
-		addattr_nest_end(n, tailins);
-	}
-
-	addattr_nest_end(n, tailinsl);
-
-skip_ins_encoding:
-	addattr_nest_end(n, tailma);
-
-	if (ret == 0) {
-		*argc_p = argc;
-		*argv_p = argv;
-		return 0;
-	}
-
-unregister_meta:
-	unregister_kernel_metadata();
-
-	return ret;
-}
-
-static int metact_print_operand(const char *ABC, struct rtattr *op_attr,
-				FILE *f)
+static int p4tc_cmds_print_operand(const char *ABC, struct rtattr *op_attr,
+				   FILE *f)
 {
         void *path = NULL;
-	struct rtattr *tb[TCAA_METACT_OPND_MAX + 1];
-	struct tca_u_meta_operand *opnd;
+	struct rtattr *tb[P4TC_CMD_OPND_MAX + 1];
+	struct p4tc_u_operand *opnd;
 
 	if (!op_attr)
 		return 0;
 
-	parse_rtattr_nested(tb, TCAA_METACT_OPND_MAX, op_attr);
+	parse_rtattr_nested(tb, P4TC_CMD_OPND_MAX, op_attr);
 
-	if (tb[TCAA_METACT_OPND_PATH])
-		path = RTA_DATA(tb[TCAA_METACT_OPND_PATH]);
+	if (tb[P4TC_CMD_OPND_PATH])
+		path = RTA_DATA(tb[P4TC_CMD_OPND_PATH]);
 
-	if (!tb[TCAA_METACT_OPND_INFO]) {
-		fprintf(stderr, "Missing metact operand information\n");
+	if (!tb[P4TC_CMD_OPND_INFO]) {
+		fprintf(stderr, "Missing p4tc_cmds operand information\n");
 		return -1;
 	}
 
-        opnd = RTA_DATA(tb[TCAA_METACT_OPND_INFO]);
+	opnd = RTA_DATA(tb[P4TC_CMD_OPND_INFO]);
 	print_operand_content(ABC, opnd, path, stdout);
 
 	return 0;
 }
 
-static int metact_print_ops(int i, struct rtattr *op_attr, FILE *f)
+static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
 {
-	struct rtattr *tb[TCAA_METACT_OPER_MAX + 1];
-	struct tca_u_meta_operate *op_entry;
+	struct rtattr *tb[P4TC_CMD_OPER_MAX + 1];
+	struct p4tc_u_operate *op_entry;
 	int err;
 
-	parse_rtattr_nested(tb, TCAA_METACT_OPER_MAX, op_attr);
+	parse_rtattr_nested(tb, P4TC_CMD_OPER_MAX, op_attr);
 
-	if (!tb[TCAA_METACT_OPERATION]) {
-		fprintf(stderr, "Missing metact operation\n");
+	if (!tb[P4TC_CMD_OPERATION]) {
+		fprintf(stderr, "Missing p4tc_cmds operation\n");
 		return -1;
 	}
 
-	op_entry = RTA_DATA(tb[TCAA_METACT_OPERATION]);
+	op_entry = RTA_DATA(tb[P4TC_CMD_OPERATION]);
 
 	print_operation(op_entry, f);
 
@@ -1754,19 +1609,19 @@ static int metact_print_ops(int i, struct rtattr *op_attr, FILE *f)
 
 	open_json_object("OPA");
 	print_string(PRINT_FP, NULL, "\t  operands:\n", NULL);
-	err = metact_print_operand("A", tb[TCAA_METACT_OPER_A], f);
+	err = p4tc_cmds_print_operand("A", tb[P4TC_CMD_OPER_A], f);
         if (err < 0)
                 return err;
 	close_json_object();
 
 	open_json_object("OPB");
-	err = metact_print_operand("B", tb[TCAA_METACT_OPER_B], f);
+	err = p4tc_cmds_print_operand("B", tb[P4TC_CMD_OPER_B], f);
         if (err < 0)
                 return err;
 	close_json_object();
 
 	open_json_object("OPC");
-	err = metact_print_operand("C", tb[TCAA_METACT_OPER_C], f);
+	err = p4tc_cmds_print_operand("C", tb[P4TC_CMD_OPER_C], f);
         if (err < 0)
                 return err;
 	close_json_object();
@@ -1776,9 +1631,9 @@ static int metact_print_ops(int i, struct rtattr *op_attr, FILE *f)
 	return 0;
 }
 
-int print_metact_cmds(FILE *f, struct rtattr *arg)
+int p4tc_print_cmds(FILE *f, struct rtattr *arg)
 {
-	struct rtattr *oplist_attr[TCA_METACT_LIST_MAX + 1];
+	struct rtattr *oplist_attr[P4TC_CMDS_LIST_MAX + 1];
 	struct p4_metat_s metadata[32];
 	int err, i;
 
@@ -1788,12 +1643,12 @@ int print_metact_cmds(FILE *f, struct rtattr *arg)
 		return -1;
 	}
 
-	parse_rtattr_nested(oplist_attr, TCA_METACT_LIST_MAX, arg);
+	parse_rtattr_nested(oplist_attr, P4TC_CMDS_LIST_MAX, arg);
 
 	open_json_array(PRINT_JSON, "operations");
-	for (i = 1; i <= TCA_METACT_LIST_MAX && oplist_attr[i]; i++) {
+	for (i = 1; i <= P4TC_CMDS_LIST_MAX && oplist_attr[i]; i++) {
 		open_json_object(NULL);
-		err = metact_print_ops(i, oplist_attr[i], f);
+		err = p4tc_cmds_print_ops(i, oplist_attr[i], f);
 		if (err) {
 			unregister_kernel_metadata();
 			return err;
@@ -1808,54 +1663,3 @@ int print_metact_cmds(FILE *f, struct rtattr *arg)
 
 	return 0;
 }
-
-int print_metact(struct action_util *au, FILE *f, struct rtattr *arg)
-{
-	struct rtattr *tb[TCA_METACT_MAX + 1];
-	struct tc_metact *p;
-
-	if (arg == NULL)
-		return 0;
-
-	parse_rtattr_nested(tb, TCA_METACT_MAX, arg);
-
-	if (tb[TCA_METACT_ACT_NAME])
-		print_string(PRINT_ANY, "kind", "%s ",
-			     RTA_DATA(tb[TCA_METACT_ACT_NAME]));
-	else
-		print_string(PRINT_ANY, "kind", "%s ", "metact");
-
-	if (!tb[TCA_METACT_PARMS] || !tb[TCA_METACT_LIST]) {
-		fprintf(stderr, "Missing metact parameters\n");
-		return -1;
-	}
-
-	p = RTA_DATA(tb[TCA_METACT_PARMS]);
-	print_uint(PRINT_ANY, "index", " index %u", p->index);
-	print_int(PRINT_ANY, "ref", " ref %d", p->refcnt);
-	print_int(PRINT_ANY, "bind", " bind %d", p->bindcnt);
-
-	if (show_stats) {
-		if (tb[TCA_METACT_TM]) {
-			struct tcf_t *tm = RTA_DATA(tb[TCA_METACT_TM]);
-
-			print_tm(f, tm);
-		}
-	}
-
-	if (tb[TCA_METACT_ACT_PARMS]) {
-		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
-		open_json_array(PRINT_JSON, "params");
-		print_dyna_parms(tb[TCA_METACT_ACT_PARMS], f);
-		close_json_array(PRINT_JSON, NULL);
-	}
-
-	return print_metact_cmds(f, tb[TCA_METACT_LIST]);
-}
-
-struct action_util metact_action_util = {
-	.id = "metact",
-	.aid = TCA_ID_METACT,
-	.parse_aopt = parse_metact,
-	.print_aopt = print_metact,
-};
