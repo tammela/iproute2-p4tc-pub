@@ -22,27 +22,27 @@ key randomKey2 bit32 1
 key randomKey3 bit64 1
 
 header ethernet 22 1
-field dstAddr macaddr 1
-field srcAddr macaddr 2
-field type bit16 14
+field dstAddr macaddr 1 1
+field srcAddr macaddr 2 1
+field type bit16 14 1
 
 header ipv4 22 2
-field version bit4 15
-field ihl bit4 5
-field tos bit8 6
-field totlen bit16 7
-field id bit16 8
-field flags bit3 9
-field fragoff bit13 10
-field ttl bit8 11
-field proto bit8 12
-field checksum bit16 13
-field srcAddr ipv4 3
-field dstAddr ipv4 4
+field version bit4 15 1
+field ihl bit4 5 1
+field tos bit8 6 1
+field totlen bit16 7 1
+field id bit16 8 1
+field flags bit3 9 1
+field fragoff bit13 10 1
+field ttl bit8 11 1
+field proto bit8 12 1
+field checksum bit16 13 1
+field srcAddr ipv4 3 1
+field dstAddr ipv4 4 1
 
 header tcp 22 3
-field srcPort bit16 16
-field dstPort bit16 17
+field srcPort bit16 16 1
+field dstPort bit16 17 1
 
 metadata mymd bit32 22 1
 metadata mytest bit16 22 2

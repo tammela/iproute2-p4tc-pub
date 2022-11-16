@@ -40,6 +40,7 @@ struct hdrfield {
 	char name[TEMPLATENAMSZ];
 	struct p4_type_s *ty;
 	__u32 id;
+	__u32 parserid;
 	__u16 startbit;
 	__u16 endbit;
 };

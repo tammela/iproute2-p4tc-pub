@@ -146,13 +146,14 @@ int p4tc_get_header_fields(struct hdrfield fields[], const char *pname,
 	while (getline(&line, &len, f) != -1) {
 		__u32 bitsz = 0;
 		struct p4_type_s *p4_type;
+		__u32 parserid;
 		int scanned;
 		__u32 id;
 
-		scanned = sscanf(line, "%s %s %s %u[^\n]", field_str, field_name,
-				 type_str, &id);
+		scanned = sscanf(line, "%s %s %s %u %u[^\n]", field_str,
+				 field_name, type_str, &id, &parserid);
 
-		if (scanned != 4)
+		if (scanned != 5)
 			break;
 		if (strcmp(field_str, "field") != 0)
 			continue;
@@ -165,6 +166,7 @@ int p4tc_get_header_fields(struct hdrfield fields[], const char *pname,
 		}
 
 		fields[i].id = id;
+		fields[i].parserid = parserid;
 		fields[i].ty = p4_type;
 
 		fields[i].startbit = hdr_offset;

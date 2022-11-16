@@ -1137,6 +1137,7 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		hdr_ty.startbit = field->startbit;
 		hdr_ty.endbit = field->endbit;
 
+		ids[0] = field->parserid;
 		ids[1] = field->id;
 	} else if (hdrfield_id) {
 		ids[1] = hdrfield_id;
@@ -1440,6 +1441,24 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				argc--;
 				if (parse_action(&argc, &argv,
 						 P4TC_TCLASS_POSTACTIONS | NLA_F_NESTED, n)) {
+					fprintf(stderr, "Illegal action\n");
+					return -1;
+				}
+				continue;
+			} else if (strcmp(*argv, "default_hit_action") == 0) {
+				argv++;
+				argc--;
+				if (parse_action(&argc, &argv,
+						 P4TC_TCLASS_DEFAULT_HIT | NLA_F_NESTED, n)) {
+					fprintf(stderr, "Illegal action\n");
+					return -1;
+				}
+				continue;
+			} else if (strcmp(*argv, "default_miss_action") == 0) {
+				argv++;
+				argc--;
+				if (parse_action(&argc, &argv,
+						 P4TC_TCLASS_DEFAULT_MISS | NLA_F_NESTED, n)) {
 					fprintf(stderr, "Illegal action\n");
 					return -1;
 				}
