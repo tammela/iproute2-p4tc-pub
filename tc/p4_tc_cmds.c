@@ -35,17 +35,14 @@
 #define MAX_PATH_COMPONENTS 5
 #endif
 
+struct p4tc_u_internal_operand {
+	struct p4tc_u_operand op;
+	void *path;
+};
+
 struct p4tc_cmds_v {
+	struct p4tc_u_internal_operand opnds[P4TC_CMD_OPERS_MAX];
 	struct p4tc_u_operate ins;
-	struct p4tc_u_operand opA;
-	struct p4tc_u_operand opB;
-	struct p4tc_u_operand opC;
-	void *pathA;
-	void *pathB;
-	void *pathC;
-	bool Apresent;
-	bool Bpresent;
-	bool Cpresent;
 };
 
 static struct p4tc_cmds_v INS[P4TC_CMDS_LIST_MAX];
@@ -64,6 +61,8 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 				     char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_binarith_operands(struct action_util *a, int *argc_p,
 				   char ***argv_p, struct p4tc_cmds_v *ins);
+static int parse_concat_operands(struct action_util *a, int *argc_p,
+				 char ***argv_p, struct p4tc_cmds_v *ins);
 
 struct op_type_s {
         int id;
@@ -92,7 +91,7 @@ static struct op_type_s op_types [] = {
 		NULL},
 	{P4TC_CMD_OP_PLUS, "plus", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_SUB, "sub", parse_binarith_operands, NULL },
-	{P4TC_CMD_OP_CONCAT, "concat", parse_binarith_operands, NULL },
+	{P4TC_CMD_OP_CONCAT, "concat", parse_concat_operands, NULL },
 	{P4TC_CMD_OP_BAND, "band", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_BOR, "bor", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_BXOR, "bxor", parse_binarith_operands, NULL },
@@ -130,29 +129,29 @@ struct opnd_type_s {
         int type_id;
         const char *name;
 	int (*get_opertype)(struct action_util *a, const char *op_components[],
-			    struct p4tc_u_operand *op, void **path);
+			    struct p4tc_u_internal_operand *intern_op);
 	void (*print_opertype)(struct p4tc_u_operand *oper, void *oppath,
 			       FILE *f);
 };
 
 int get_metadata_type(struct action_util *a, const char *op_components[],
-		      struct p4tc_u_operand *op, void **path);
+		      struct p4tc_u_internal_operand *intern_op);
 int get_key_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path);
+		 struct p4tc_u_internal_operand *intern_op);
 int get_const_type(struct action_util *a, const char *op_components[],
-		   struct p4tc_u_operand *op, void **path);
+		   struct p4tc_u_internal_operand *intern_op);
 int get_act_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path);
+		 struct p4tc_u_internal_operand *intern_op);
 int get_table_type(struct action_util *a, const char *op_components[],
-		   struct p4tc_u_operand *op, void **path);
+		   struct p4tc_u_internal_operand *intern_op);
 int get_res_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path);
+		 struct p4tc_u_internal_operand *intern_op);
 int get_hdrfield_type(struct action_util *a, const char *op_components[],
-		      struct p4tc_u_operand *op, void **path);
+		      struct p4tc_u_internal_operand *intern_op);
 int get_act_param_type(struct action_util *a, const char *op_components[],
-		       struct p4tc_u_operand *op, void **path);
+		       struct p4tc_u_internal_operand *intern_op);
 int get_dev_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path);
+		 struct p4tc_u_internal_operand *intern_op);
 
 static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f);
@@ -219,9 +218,10 @@ static struct opnd_type_s *get_optype_byid(int id)
 }
 
 int get_act_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path)
+		 struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[0], *f2 = op_components[1];
+	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f3 = op_components[2];
 	bool is_gact = false;
 	__u32 actionindex;
@@ -265,9 +265,10 @@ int get_act_type(struct action_util *a, const char *op_components[],
 }
 
 int get_const_type(struct action_util *a, const char *op_components[],
-		   struct p4tc_u_operand *op, void **path)
+		   struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
+	struct p4tc_u_operand *op = &intern_op->op;
 	bool isslice = false, israw = false;
 	struct p4_type_value val = {NULL};
 	int rc = 0, bitsz=0, l=0, r=0;
@@ -360,12 +361,12 @@ int get_const_type(struct action_util *a, const char *op_components[],
 	op->pipeid = 0;
 
 	if (t->bitsz > 32) {
-		*path = calloc(1, t->bitsz >> 3);
-		if (!*path) {
+		intern_op->path = calloc(1, t->bitsz >> 3);
+		if (!intern_op->path) {
 			fprintf(stderr, "Unable to allocate path\n");
 			return -1;
 		}
-		val.value = *path;
+		val.value = intern_op->path;
 		rc = t->parse_p4t(&val, f2, 0);
 	} else {
 		val.value = &op->immedv;
@@ -380,18 +381,29 @@ int get_const_type(struct action_util *a, const char *op_components[],
 }
 
 int get_metadata_type(struct action_util *a, const char *op_components[],
-		      struct p4tc_u_operand *op, void **path)
+		      struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
+	struct p4tc_u_operand *op = &intern_op->op;
 	struct p4_metat_s *m = NULL;
 	struct p4_type_s *t = NULL;
 	int rc = 0, l=0, r=0;
 	bool isslice = false;
 	char *pr = NULL;
 
+	if (!f2) {
+		fprintf(stderr, "Must specify metadata name\n");
+		return -1;
+	}
+
 	rc = sscanf(f2, "%m[a-z0-9_/.%][%d-%d]", &pr, &l, &r);
 	if (rc == 3 && l>=0 && r>=0)
 		isslice = true;
+
+	if (!f1) {
+		fprintf(stderr, "Must specify pipeline name\n");
+		return -1;
+	}
 
 	m = get_meta_byname(f1, pr);
 	if (!m) {
@@ -426,9 +438,10 @@ int get_metadata_type(struct action_util *a, const char *op_components[],
 }
 
 int get_table_type(struct action_util *a, const char *op_components[],
-		   struct p4tc_u_operand *op, void **path)
+		   struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
+	struct p4tc_u_operand *op = &intern_op->op;
 	__u32 pipeid = 0, tbcid = 0;
 	int rc = 0;
 
@@ -445,10 +458,11 @@ int get_table_type(struct action_util *a, const char *op_components[],
 }
 
 int get_hdrfield_type(struct action_util *a, const char *op_components[],
-		      struct p4tc_u_operand *op, void **path)
+		      struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	const char *f3 = op_components[3], *f4 = op_components[4];
+	struct p4tc_u_operand *op = &intern_op->op;
 	struct hdrfield fields[32] = {0};
 	__u32 pipeid = 0, parserid = 0;
 	struct hdrfield *field;
@@ -481,8 +495,9 @@ int get_hdrfield_type(struct action_util *a, const char *op_components[],
 }
 
 int get_act_param_type(struct action_util *a, const char *op_components[],
-		       struct p4tc_u_operand *op, void **path)
+		       struct p4tc_u_internal_operand *intern_op)
 {
+	struct p4tc_u_operand *op = &intern_op->op;
 	const char separator[2] = "/";
 	const char *param_name = op_components[1];
 	char act_name_copy[ACTNAMSIZ];
@@ -526,8 +541,9 @@ int get_act_param_type(struct action_util *a, const char *op_components[],
 }
 
 int get_dev_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path)
+		 struct p4tc_u_internal_operand *intern_op)
 {
+	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f1 = op_components[1];
 	struct p4_type_s *t;
 	int idx;
@@ -550,9 +566,10 @@ int get_dev_type(struct action_util *a, const char *op_components[],
 }
 
 int get_key_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path)
+		 struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
+	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f3 = op_components[3];
 	__u32 pipeid = 0, tbcid = 0;
 	__u32 tot_key_len = 0;
@@ -600,8 +617,9 @@ int get_key_type(struct action_util *a, const char *op_components[],
 }
 
 int get_res_type(struct action_util *a, const char *op_components[],
-		 struct p4tc_u_operand *op, void **path)
+		 struct p4tc_u_internal_operand *intern_op)
 {
+	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f1 = op_components[1];
 	struct p4_type_s *type;
 
@@ -833,7 +851,7 @@ static int parse_operand_path(char *path, char **components)
 }
 
 static int populate_oper_path(struct action_util *a, char *fields[],
-			      struct p4tc_u_operand *op, void *path)
+			      struct p4tc_u_internal_operand *intern_op)
 {
 	struct opnd_type_s *o;
 
@@ -844,9 +862,9 @@ static int populate_oper_path(struct action_util *a, char *fields[],
 		return -1;
 	}
 
-	op->oper_type = o->id;
+	intern_op->op.oper_type = o->id;
 
-	if (o->get_opertype(a, (const char **)fields, op, path)) {
+	if (o->get_opertype(a, (const char **)fields, intern_op)) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			fields[1], fields[2]);
 		return -1;
@@ -888,7 +906,7 @@ static int parse_cmd_control(int *argc_p, char ***argv_p,
 static int parse_act_operands(struct action_util *a, int *argc_p,
 			      char ***argv_p, struct p4tc_cmds_v *ins)
 {
-	struct p4tc_u_operand *A = &ins->opA;
+	struct p4tc_u_operand *A = &ins->opnds[P4TC_CMD_OPER_A].op;
 	char *Af[MAX_PATH_COMPONENTS] = { };
 	int num_Acomponents = 0;
 	char **argv = *argv_p;
@@ -904,8 +922,6 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
 	o = get_optype_byid(P4TC_OPER_ACTID);
 	if (!o) {
 		fprintf(stderr, "Invalid action datatype %s\n",
@@ -914,7 +930,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	}
 
 	A->oper_type = o->id;
-	if (o->get_opertype(a, (const char **)Af, A, NULL)) {
+	if (o->get_opertype(a, (const char **)Af, &ins->opnds[P4TC_CMD_OPER_A])) {
 		fprintf(stderr, "Invalid operand datatype %s.%s\n",
 			Af[1], Af[2]);
 		return -1;
@@ -943,6 +959,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
 	char *Bcomponents[MAX_PATH_COMPONENTS] = { };
 	char *Ccomponents[MAX_PATH_COMPONENTS] = { };
+	struct p4tc_u_internal_operand *A_intern, *B_intern;
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	char *argsA, *argsB, *argsC;
@@ -956,11 +973,6 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
-	if (ins->ins.op_type == P4TC_CMD_OP_ACT)
-		goto done_p_operand;
-
 	NEXT_ARG();
 	argsB = strdupa(*argv);
 
@@ -968,17 +980,18 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	if (num_Bcomponents < 3)
 		return -1;
 
-	ins->Bpresent = true;
 	if (NEXT_ARG_OK()) {
 		NEXT_ARG();
 
 		argsC = strdupa(*argv);
 
 		num_Ccomponents = parse_operand_path(argsC, Ccomponents);
-		if (!argsC || num_Ccomponents < 3)
+		if (!argsC || num_Ccomponents < 3) {
 			PREV_ARG();
-		else
-			ins->Cpresent = true;
+		} else {
+			fprintf(stderr, "Set operand mustn't have opC\n");
+			return -1;
+		}
 	}
 
 	NEXT_ARG_FWD();
@@ -992,44 +1005,37 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	}
 	PREV_ARG();
 
-	if (ins->Apresent) {
-		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
-
-		if (ins->ins.op_type == P4TC_CMD_OP_SET &&
-		    ins->opA.oper_type == P4TC_OPER_CONST) {
-			fprintf(stderr, "Invalid SET const operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
+	A_intern = &ins->opnds[P4TC_CMD_OPER_A];
+	rc = populate_oper_path(a, Acomponents, A_intern);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
 
-	if (ins->Bpresent) {
-		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
-		if (rc < 0) {
-			fprintf(stderr, "...Invalid operand B %s\n",
-				Bcomponents[0]);
-			return -1;
-		}
+	if (A_intern->op.oper_type == P4TC_OPER_CONST) {
+		fprintf(stderr, "Invalid SET const operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
 
-	if (ins->Cpresent) {
-		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
-		if (rc < 0) {
-			fprintf(stderr, "...Invalid operand C %s\n",
-				Ccomponents[0]);
-			return -1;
-		}
+	B_intern = &ins->opnds[P4TC_CMD_OPER_B];
+	rc = populate_oper_path(a, Bcomponents, B_intern);
+	if (rc < 0) {
+		fprintf(stderr, "...Invalid operand B %s\n",
+			Bcomponents[0]);
+		return -1;
+	}
+	if (B_intern->op.oper_type == P4TC_OPER_KEY) {
+		fprintf(stderr, "Invalid SET const operand B %s\n",
+			Bcomponents[0]);
+		return -1;
 	}
 
-done_p_operand:
 	NEXT_ARG_FWD();
 	*argc_p = argc;
 	*argv_p = argv;
+
 	return 0;
 }
 
@@ -1053,8 +1059,6 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
 	NEXT_ARG();
 	argsB = strdupa(*argv);
 
@@ -1063,8 +1067,6 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 		fprintf(stderr, "Invalid operand B %s\n", *argv);
 		return -1;
 	}
-
-	ins->Bpresent = true;
 
 	NEXT_ARG_FWD();
 	if (strcmp(*argv, "control") == 0) {
@@ -1078,22 +1080,18 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	if (ins->Apresent) {
-		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
+	rc = populate_oper_path(a, Acomponents, &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
 
-	if (ins->Bpresent) {
-		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
-		if (rc < 0) {
-			fprintf(stderr, "...Invalid operand B %s\n",
-				Bcomponents[0]);
-			return -1;
-		}
+	rc = populate_oper_path(a, Bcomponents, &ins->opnds[P4TC_CMD_OPER_B]);
+	if (rc < 0) {
+		fprintf(stderr, "...Invalid operand B %s\n",
+			Bcomponents[0]);
+		return -1;
 	}
 
 	*argc_p = argc;
@@ -1128,8 +1126,6 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
@@ -1142,24 +1138,24 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 	}
 	PREV_ARG();
 
-	if (ins->Apresent) {
-		struct p4tc_u_operand *opA = &ins->opA;
+	rc = populate_oper_path(a, Acomponents, &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
+	}
 
-		rc = populate_oper_path(a, Acomponents, opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
+	if (set_prefix) {
+		struct p4tc_u_internal_operand *intern_op;
+		intern_op = &ins->opnds[P4TC_CMD_OPER_A];
+
+		intern_op->path = calloc(P4TC_CMD_MAX_OPER_PATH_LEN, sizeof(char));
+		if (!intern_op->path) {
+			fprintf(stderr, "Unable to allocate path\n");
 			return -1;
 		}
-
-		if (set_prefix) {
-			ins->pathA = calloc(P4TC_CMD_MAX_OPER_PATH_LEN, sizeof(char));
-			if (!ins->pathA) {
-				fprintf(stderr, "Unable to allocate path\n");
-				return -1;
-			}
-			strncpy(ins->pathA, prefix, P4TC_CMD_MAX_OPER_PATH_LEN);
-		}
+		strncpy(intern_op->path, prefix,
+			P4TC_CMD_MAX_OPER_PATH_LEN);
 	}
 
 	NEXT_ARG_FWD();
@@ -1171,6 +1167,7 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 				 char ***argv_p, struct p4tc_cmds_v *ins)
 {
+	struct p4tc_u_operand *A = &ins->opnds[P4TC_CMD_OPER_A].op;
 	char *Acomponents[MAX_PATH_COMPONENTS] = { };
 	int num_Acomponents = 0;
 	char **argv = *argv_p;
@@ -1187,8 +1184,6 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
 	NEXT_ARG_FWD();
 
 	if (*argv && strcmp(*argv, "keyid") == 0) {
@@ -1199,24 +1194,22 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 		}
 	}
 
-	if (ins->Apresent) {
-		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
-
-		if (ins->opA.oper_type != P4TC_OPER_TBL) {
-			fprintf(stderr, "Table apply operand must be a table\n");
-			return -1;
-		}
-		ins->opA.oper_startbit = 0;
-		ins->opA.oper_endbit = 0;
-		ins->opA.oper_datatype = P4TC_OPER_TBL;
-
-		ins->opA.immedv2 = keyid;
+	rc = populate_oper_path(a, Acomponents, &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
+
+	if (A->oper_type != P4TC_OPER_TBL) {
+		fprintf(stderr, "Table apply operand must be a table\n");
+		return -1;
+	}
+	A->oper_startbit = 0;
+	A->oper_endbit = 0;
+	A->oper_datatype = P4TC_OPER_TBL;
+
+	A->immedv2 = keyid;
 
 	*argc_p = argc;
 	*argv_p = argv;
@@ -1241,17 +1234,12 @@ static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
 	NEXT_ARG_FWD();
 
-	if (ins->Apresent) {
-		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
+	rc = populate_oper_path(a, Acomponents, &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n", Acomponents[0]);
+		return -1;
 	}
 
 	*argc_p = argc;
@@ -1279,11 +1267,6 @@ static int parse_binarith_operands(struct action_util *a, int *argc_p,
 		return -1;
 	}
 
-	ins->Apresent = true;
-
-	if (ins->ins.op_type == P4TC_CMD_OP_ACT)
-		goto done_p_operand;
-
 	NEXT_ARG();
 	argsB = strdupa(*argv);
 
@@ -1291,17 +1274,17 @@ static int parse_binarith_operands(struct action_util *a, int *argc_p,
 	if (num_Bcomponents < 3)
 		return -1;
 
-	ins->Bpresent = true;
 	if (NEXT_ARG_OK()) {
 		NEXT_ARG();
 
 		argsC = strdupa(*argv);
 
 		num_Ccomponents = parse_operand_path(argsC, Ccomponents);
-		if (!argsC || num_Ccomponents < 3)
-			PREV_ARG();
-		else
-			ins->Cpresent = true;
+		if (!argsC || num_Ccomponents < 3) {
+			fprintf(stderr,
+				"Must specify 3 arguments for arithmetic command");
+			return -1;
+		}
 	}
 
 	NEXT_ARG_FWD();
@@ -1316,44 +1299,97 @@ static int parse_binarith_operands(struct action_util *a, int *argc_p,
 	}
 	PREV_ARG();
 
-	if (ins->Apresent) {
-		rc = populate_oper_path(a, Acomponents, &ins->opA, &ins->pathA);
-		if (rc < 0) {
-			fprintf(stderr, "XXX: Invalid operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
-
-		if (ins->ins.op_type == P4TC_CMD_OP_SET &&
-		    ins->opA.oper_type == P4TC_OPER_CONST) {
-			fprintf(stderr, "Invalid PLUS const operand A %s\n",
-				Acomponents[0]);
-			return -1;
-		}
+	rc = populate_oper_path(a, Acomponents, &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
 
-	if (ins->Bpresent) {
-		rc = populate_oper_path(a, Bcomponents, &ins->opB, &ins->pathB);
-		if (rc < 0) {
-			fprintf(stderr, "...Invalid operand B %s\n",
-				Bcomponents[0]);
-			return -1;
-		}
+	if (ins->opnds[P4TC_CMD_OPER_A].op.oper_type == P4TC_OPER_CONST) {
+		fprintf(stderr, "Invalid arithmetic const operand A %s\n",
+			Acomponents[0]);
+		return -1;
 	}
 
-	if (ins->Cpresent) {
-		rc = populate_oper_path(a, Ccomponents, &ins->opC, &ins->pathC);
-		if (rc < 0) {
-			fprintf(stderr, "...Invalid operand C %s\n",
-				Ccomponents[0]);
-			return -1;
-		}
+	rc = populate_oper_path(a, Bcomponents, &ins->opnds[P4TC_CMD_OPER_B]);
+	if (rc < 0) {
+		fprintf(stderr, "...Invalid operand B %s\n",
+			Bcomponents[0]);
+		return -1;
 	}
 
-done_p_operand:
+	rc = populate_oper_path(a, Ccomponents, &ins->opnds[P4TC_CMD_OPER_C]);
+	if (rc < 0) {
+		fprintf(stderr, "...Invalid operand C %s\n",
+			Ccomponents[0]);
+		return -1;
+	}
+
 	NEXT_ARG_FWD();
 	*argc_p = argc;
 	*argv_p = argv;
+
+	return 0;
+}
+
+static int parse_concat_operands(struct action_util *a, int *argc_p,
+				 char ***argv_p, struct p4tc_cmds_v *ins)
+{
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	int i = 0;
+	int rc;
+
+	while (argc && strcmp(*argv, "control") && strcmp(*argv, "cmd") &&
+	       strcmp(*argv, "param")) {
+		char *components[MAX_PATH_COMPONENTS] = {};
+		struct p4tc_u_internal_operand *op;
+		int num_components;
+		char *args;
+
+		if (i == P4TC_CMD_OPERS_MAX) {
+			fprintf(stderr,
+				"Concat can have at most %u operands\n",
+				P4TC_CMD_OPERS_MAX );
+			return -1;
+		}
+
+		op = &ins->opnds[i];
+
+		args = strdupa(*argv);
+
+		num_components = parse_operand_path(args, components);
+		if (!args || num_components < 2) {
+			fprintf(stderr, "Invalid operand\n");
+			return -1;
+		}
+
+		rc = populate_oper_path(a, components, op);
+		if (rc < 0) {
+			fprintf(stderr, "XXX: Invalid operand %s\n",
+				components[0]);
+			return -1;
+		}
+
+		NEXT_ARG_FWD();
+
+		i++;
+	}
+
+	if (*argv && strcmp(*argv, "control") == 0) {
+		struct p4tc_u_operate *op = &ins->ins;
+
+		rc = parse_cmd_control(&argc, &argv, op);
+		if (rc) {
+			fprintf(stderr, "Invalid binarith \"control\"\n");
+			return -1;
+		}
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
 	return 0;
 }
 
@@ -1680,6 +1716,8 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			break;
 		} else if (strcmp(*argv, "defact") == 0) {
 			break;
+		} else if (strcmp(*argv, "param") == 0) {
+			break;
 		} else {
 			fprintf(stderr, "p4tc_cmds: bad command %d:<%s>\n",
 				argc, *argv);
@@ -1702,9 +1740,7 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 {
 	struct p4tc_cmds_v *ins = NULL;
-	struct rtattr *tailoperA, *tailoperB, *tailoperC;
 	struct rtattr *tailinsl, *tailins;
-	int b2B;
 	int i;
 
 	if (!ins_cnt) {
@@ -1713,49 +1749,38 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 
 	tailinsl = addattr_nest(n, MAX_MSG, tca_id | NLA_F_NESTED);
 	for (i = 0; i < ins_cnt; i++) {
+		struct rtattr *tailoper;
+		int j;
+
 		tailins = addattr_nest(n, MAX_MSG, (i + 1) | NLA_F_NESTED);
+
 
 		ins = &INS[i];
 
 		addattr_l(n, MAX_MSG, P4TC_CMD_OPERATION, &ins->ins,
 			  sizeof(struct p4tc_u_operate));
 
-		if (ins->Apresent) {
-			tailoperA = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_A | NLA_F_NESTED);
+		tailoper = addattr_nest(n, MAX_MSG,
+					     P4TC_CMD_OPER_LIST | NLA_F_NESTED);
+		for (j = 0; j < P4TC_CMD_OPERS_MAX; j++) {
+			struct p4tc_u_internal_operand *op;
+			struct rtattr *count;
 
-			if (ins->pathA) {
+			op = &ins->opnds[j];
+
+			if (op->op.oper_type == P4TC_OPER_UNSPEC)
+				break;
+
+			count = addattr_nest(n, MAX_MSG, (j + 1) | NLA_F_NESTED);
+			if (op->path) {
 				addattrstrz(n, MAX_MSG, P4TC_CMD_OPND_PATH,
-					    ins->pathA);
-				free(ins->pathA);
+					    op->path);
 			}
-			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opA,
+			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &op->op,
 				  sizeof(struct p4tc_u_operand));
-			addattr_nest_end(n, tailoperA);
+			addattr_nest_end(n, count);
 		}
-
-		if (ins->Bpresent) {
-			tailoperB = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_B | NLA_F_NESTED);
-			if (ins->pathB) {
-				b2B = (((ins->opB.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, P4TC_CMD_OPND_PATH,
-					  ins->pathB, b2B);
-			}
-			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opB,
-				  sizeof(struct p4tc_u_operand));
-			addattr_nest_end(n, tailoperB);
-		}
-
-		if (ins->Cpresent) {
-			tailoperC = addattr_nest(n, MAX_MSG, P4TC_CMD_OPER_C | NLA_F_NESTED);
-			if (ins->pathC) {
-				b2B = (((ins->opC.oper_cbitsize-1) | 7)+1) >>3;
-				addattr_l(n, MAX_MSG, P4TC_CMD_OPND_PATH,
-					  ins->pathC, b2B);
-			}
-			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &ins->opC,
-				  sizeof(struct p4tc_u_operand));
-			addattr_nest_end(n, tailoperC);
-		}
+		addattr_nest_end(n, tailoper);
 
 		addattr_nest_end(n, tailins);
 	}
@@ -1790,6 +1815,28 @@ static int p4tc_cmds_print_operand(const char *ABC, struct rtattr *op_attr,
 	return 0;
 }
 
+static int p4tc_cmds_print_operands(struct rtattr *op_attr, FILE *f)
+{
+	struct rtattr *tb[P4TC_CMD_OPERS_MAX + 1];
+	char ABC[] = { 'O', 'P', 'A' };
+	int i;
+
+	if (!op_attr)
+		return 0;
+
+	parse_rtattr_nested(tb, P4TC_CMD_OPERS_MAX, op_attr);
+
+	for (i = 1; i < P4TC_CMD_OPERS_MAX + 1 && tb[i]; i++) {
+		open_json_object(ABC);
+		p4tc_cmds_print_operand(&ABC[2], tb[i], f);
+		close_json_object();
+
+		ABC[2] = ABC[2] + 1;
+	}
+
+	return 0;
+}
+
 static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
 {
 	struct rtattr *tb[P4TC_CMD_OPER_MAX + 1];
@@ -1809,24 +1856,9 @@ static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
 
 	open_json_object("operands");
 
-	open_json_object("OPA");
-	print_string(PRINT_FP, NULL, "\t  operands:\n", NULL);
-	err = p4tc_cmds_print_operand("A", tb[P4TC_CMD_OPER_A], f);
+	err = p4tc_cmds_print_operands(tb[P4TC_CMD_OPER_LIST], f);
         if (err < 0)
                 return err;
-	close_json_object();
-
-	open_json_object("OPB");
-	err = p4tc_cmds_print_operand("B", tb[P4TC_CMD_OPER_B], f);
-        if (err < 0)
-                return err;
-	close_json_object();
-
-	open_json_object("OPC");
-	err = p4tc_cmds_print_operand("C", tb[P4TC_CMD_OPER_C], f);
-        if (err < 0)
-                return err;
-	close_json_object();
 
 	close_json_object();
 

@@ -1048,6 +1048,8 @@ static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				ret = -1;
 				goto unregister;
 			}
+			if (argc && strcmp(*argv, "cmd") == 0)
+				continue;
 		}
 		argv++;
 		argc--;
