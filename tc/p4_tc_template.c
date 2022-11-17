@@ -437,14 +437,14 @@ static int print_table_class(struct nlmsghdr *n, struct rtattr *arg,
 
 		print_uint(PRINT_ANY, "keysz", "    key_sz %u\n",
 			   parm->tbc_keysz);
-		print_uint(PRINT_ANY, "count", "    count %u\n",
-			   parm->tbc_count);
-		print_uint(PRINT_ANY, "entries", "    entries %u\n",
+		print_uint(PRINT_ANY, "max_entries", "    max entries %u\n",
 			   parm->tbc_max_entries);
 		print_uint(PRINT_ANY, "masks", "    masks %u\n",
 			   parm->tbc_max_masks);
 		print_uint(PRINT_ANY, "default_key", "    default key %u\n",
 			   parm->tbc_default_key);
+		print_uint(PRINT_ANY, "entries", "    table class entries %u\n",
+			   parm->tbc_num_entries);
 
 		print_nl();
 	}
@@ -1382,11 +1382,6 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				if (get_u32(&tclass.tbc_keysz, *argv, 10) < 0)
 					return -1;
 				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_KEYSZ;
-			} else if (strcmp(*argv, "tcount") == 0) {
-				NEXT_ARG();
-				if (get_u32(&tclass.tbc_count, *argv, 10) < 0)
-					return -1;
-				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_COUNT;
 			} else if (strcmp(*argv, "tentries") == 0) {
 				NEXT_ARG();
 				if (get_u32(&tclass.tbc_max_entries, *argv, 10) < 0)
