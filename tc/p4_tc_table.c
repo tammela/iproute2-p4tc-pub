@@ -96,7 +96,7 @@ static void print_entry_tm(FILE *f, const struct p4tc_table_entry_tm *tm)
 }
 
 static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
-			     __u32 tbc_id, __u32 ti_id)
+			     __u32 tbc_id)
 {
 	struct rtattr *tb[P4TC_ENTRY_MAX + 1];
 	unsigned int len;
@@ -105,13 +105,6 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 
 	print_uint(PRINT_ANY, "tbcid", "table class id %u\n", tbc_id);
 	print_nl();
-
-	print_uint(PRINT_ANY, "tiid", "table instance id %u\n", ti_id);
-	print_nl();
-
-	if (tb[P4TC_ENTRY_TINAME])
-		print_string(PRINT_ANY, "tiname", "table instance name %s\n",
-			     RTA_DATA(tb[P4TC_ENTRY_TINAME]));
 
 	if (tb[P4TC_ENTRY_PRIO]) {
 		__u32 *prio = RTA_DATA(tb[P4TC_ENTRY_PRIO]);
@@ -236,22 +229,19 @@ static int print_table_entry_flush(struct nlmsghdr *n,  struct rtattr *cnt_attr,
 static int print_table_1(struct nlmsghdr *n, struct rtattr *arg,
 			  FILE *f)
 {
-	__u32 *ids, tbc_id = 0, ti_id = 0;
 	int cmd = n->nlmsg_type;
+	__u32 *tbc_id = NULL;
 	struct rtattr *tb[P4TC_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_MAX, arg);
 
-	if (tb[P4TC_PATH]) {
-		ids = RTA_DATA(tb[P4TC_PATH]);
-		tbc_id = ids[0];
-		ti_id = ids[1];
-	}
+	if (tb[P4TC_PATH])
+		tbc_id = RTA_DATA(tb[P4TC_PATH]);
 
 	if (cmd == RTM_DELP4TBENT && (n->nlmsg_flags & NLM_F_ROOT))
 		print_table_entry_flush(n, tb[P4TC_COUNT], f);
 	else
-		print_table_entry(n, tb[P4TC_PARAMS], f, tbc_id, ti_id);
+		print_table_entry(n, tb[P4TC_PARAMS], f, tbc_id ? *tbc_id: 0);
 
 	return 0;
 }
@@ -330,7 +320,6 @@ int print_table(struct nlmsghdr *n, void *arg)
 #define P4TC_FLAGS_TTYPE_NAME 0x2
 #define P4TC_FLAGS_PNAME      0x4
 #define P4TC_FLAGS_TTYPE_ID   0x8
-#define P4TC_FLAGS_TINST_ID   0x10
 
 static inline int copy_to_key(__u8 *key, __u8 *mask, const __u8 *valkey,
 			      const __u8 *valmask, __u16 *off, __u16 sz,
@@ -504,7 +493,7 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 			    char *p4tcpath[], struct nlmsghdr *n,
 			    unsigned int *flags)
 {
-	__u32 pipeid = 0, prio = 0, tbc_id = 0, ti_id = 0;
+	__u32 pipeid = 0, prio = 0, tbc_id = 0;
 	char full_tbcname[TCLASSNAMSIZ] = {0};
 	struct parse_state state = {0};
 	struct rtattr *count = NULL;
@@ -515,8 +504,6 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 	__u32 offset = 0;
 	int ret = 0;
 	char *cbname, *tbcname;
-	/* Holds two ids: tbcid and tinstid */
-	__u32 ids[2];
 
 	cbname = p4tcpath[PATH_CBNAME_IDX];
 	tbcname = p4tcpath[PATH_TBCNAME_IDX];
@@ -526,12 +513,6 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 			if (strcmp(*argv, "pipeid") == 0) {
 				NEXT_ARG();
 				if (get_u32(&pipeid, *argv, 10) < 0) {
-					ret = -1;
-					goto out;
-				}
-			} else if (strcmp(*argv, "tinstid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&ti_id, *argv, 10) < 0) {
 					ret = -1;
 					goto out;
 				}
@@ -570,12 +551,6 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 			if (strcmp(*argv, "pipeid") == 0) {
 				NEXT_ARG();
 				if (get_u32(&pipeid, *argv, 10) < 0) {
-					ret = -1;
-					goto out;
-				}
-			} else if (strcmp(*argv, "tinstid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&ti_id, *argv, 10) < 0) {
 					ret = -1;
 					goto out;
 				}
@@ -624,9 +599,6 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 
 	if (!STR_IS_EMPTY(full_tbcname))
 		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBCNAME, full_tbcname);
-	if (p4tcpath[PATH_TINAME_IDX])
-		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TINAME,
-			    p4tcpath[PATH_TINAME_IDX]);
 
 	if (parsed_keys) {
 		addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB, state.keyblob, offset);
@@ -641,9 +613,7 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 	if (parm)
 		addattr_nest_end(n, parm);
 
-	ids[0] = tbc_id;
-	ids[1] = ti_id;
-	addattr_l(n, MAX_MSG, P4TC_PATH, ids, 2 * sizeof(__u32));
+	addattr32(n, MAX_MSG, P4TC_PATH, tbc_id);
 
 	if (count)
 		addattr_nest_end(n, count);
