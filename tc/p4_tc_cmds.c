@@ -568,12 +568,12 @@ int get_dev_type(struct action_util *a, const char *op_components[],
 int get_key_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op)
 {
+	struct p4_type_s *t = get_p4type_byid(P4T_KEY);
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f3 = op_components[3];
 	__u32 pipeid = 0, tbcid = 0;
 	__u32 tot_key_len = 0;
-	struct p4_type_s *type;
 	struct tkey keys[32];
 	__u32 key_id;
 	int num_keys;
@@ -599,19 +599,19 @@ int get_key_type(struct action_util *a, const char *op_components[],
 			tot_key_len += keys[i].type->bitsz;
 	}
 
-	type = get_p4type_bysize(tot_key_len, P4T_TYPE_UNSIGNED);
-	if (!type) {
-		fprintf(stderr, "data type not found\n");
+	if (tot_key_len > t->bitsz) {
+		fprintf(stderr, "key lenght exceeds maximum key size %lu\n",
+			t->bitsz);
 		return -1;
 	}
 
 	op->pipeid = pipeid;
-	op->oper_datatype = type->containid;
-	op->oper_startbit = type->startbit;
-	op->oper_endbit = type->endbit;
+	op->oper_datatype = t->containid;
+	op->oper_startbit = t->startbit;
+	op->oper_endbit = tot_key_len - 1;
 	op->immedv = tbcid;
 	op->immedv2 = key_id;
-	op->oper_cbitsize = type->bitsz;
+	op->oper_cbitsize = op->oper_endbit - op->oper_startbit + 1;
 
 	return 0;
 }
