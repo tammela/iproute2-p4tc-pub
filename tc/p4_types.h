@@ -36,8 +36,8 @@ struct p4_type_value {
 struct p4_type_s {
 	int containid;
 	size_t bitsz;
-	__u8 startbit;
-	__u8 endbit;
+	__u16 startbit;
+	__u16 endbit;
 	int (*parse_p4t)(struct p4_type_value *val, const char *arg, int base);
 	void (*print_p4t)(const char *n, struct p4_type_value *val, FILE *f);
 	const char *name;
