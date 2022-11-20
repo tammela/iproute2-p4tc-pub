@@ -324,9 +324,9 @@ static void p4template_usage(void)
 	fprintf(stderr,
 		"usage: tc p4template create | update pipeline/pname [PIPEID] OPTS\n"
 		"       tc p4tempalte del | get pipeline/[pname] [PIPEID]\n"
-		"Where:  OPTS := NUMTCLASSES PREACTIONS POSTACTIONS STATE\n"
+		"Where:  OPTS := NUMTABLES PREACTIONS POSTACTIONS STATE\n"
 		"	PIPEID := pipeid <32 bit pipeline id>\n"
-		"	NUMTCLASSES := numtclasses <16 bit numtclasses>\n"
+		"	NUMTABLES := numtables <16 bit numtables>\n"
 		"	PREACTIONS := preactions <ACTISPEC>\n"
 		"	POSTACTIONS := postactions <ACTISPEC>\n"
 		"	ACTISPEC := <ACTNAMESPEC> <INDEXSPEC>\n"
@@ -638,11 +638,11 @@ static int print_pipeline(struct nlmsghdr *n, FILE *f, struct rtattr *arg)
 		print_nl();
 	}
 
-	if (tb[P4TC_PIPELINE_NUMTCLASSES]) {
-		__u16 num_tclasses =
-		    *((__u16 *) RTA_DATA(tb[P4TC_PIPELINE_NUMTCLASSES]));
-		print_uint(PRINT_ANY, "pnumtclasses", "    num_tclasses %u",
-			   num_tclasses);
+	if (tb[P4TC_PIPELINE_NUMTABLES]) {
+		__u16 num_tables =
+		    *((__u16 *) RTA_DATA(tb[P4TC_PIPELINE_NUMTABLES]));
+		print_uint(PRINT_ANY, "pnumtables", "    num_tables %u",
+			   num_tables);
 		print_nl();
 	}
 
@@ -1459,7 +1459,7 @@ static int parse_pipeline_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	struct rtattr *count;
 	struct rtattr *nest;
 	__u32 maxrules;
-	__u16 numtclasses;
+	__u16 numtables;
 
 	if (cmd == RTM_NEWP4TEMPLATE) {
 		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
@@ -1477,13 +1477,13 @@ static int parse_pipeline_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 
 				addattr32(n, MAX_MSG, P4TC_PIPELINE_MAXRULES,
 					  maxrules);
-			} else if (strcmp(*argv, "numtclasses") == 0) {
+			} else if (strcmp(*argv, "numtables") == 0) {
 				NEXT_ARG();
-				if (get_u16(&numtclasses, *argv, 10) < 0)
+				if (get_u16(&numtables, *argv, 10) < 0)
 					return -1;
 
-				addattr16(n, MAX_MSG, P4TC_PIPELINE_NUMTCLASSES,
-					  numtclasses);
+				addattr16(n, MAX_MSG, P4TC_PIPELINE_NUMTABLES,
+					  numtables);
 			} else if (strcmp(*argv, "preactions") == 0) {
 				argv++;
 				argc--;
