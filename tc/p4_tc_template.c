@@ -877,8 +877,6 @@ int get_obj_type(const char *str_obj_type)
 		return P4TC_OBJ_HDR_FIELD;
 	else if (!strcmp(str_obj_type, "action"))
 		return P4TC_OBJ_ACT;
-	else if (!strcmp(str_obj_type, "table"))
-		return P4TC_OBJ_TABLE_ENTRY;
 
 	return -1;
 }
