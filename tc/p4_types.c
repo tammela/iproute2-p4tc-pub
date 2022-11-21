@@ -565,6 +565,14 @@ static struct p4_type_s bool_typ = {
 	.name = "bool",
 };
 
+static struct p4_type_s key_typ = {
+	.containid = P4T_KEY,
+	.bitsz = P4TC_MAX_KEYSZ,
+	.startbit = 0,
+	.endbit = P4TC_MAX_KEYSZ - 1,
+	.name = "key",
+};
+
 void register_p4_types(void)
 {
 	hlist_add_head(&u8_typ.hlist, &types_list);
@@ -585,6 +593,7 @@ void register_p4_types(void)
 	hlist_add_head(&mac_typ.hlist, &types_list);
 	hlist_add_head(&ipv4_typ.hlist, &types_list);
 	hlist_add_head(&dev_typ.hlist, &types_list);
+	hlist_add_head(&key_typ.hlist, &types_list);
 }
 
 void unregister_p4_types(void)
@@ -607,4 +616,5 @@ void unregister_p4_types(void)
 	hlist_del(&mac_typ.hlist);
 	hlist_del(&ipv4_typ.hlist);
 	hlist_del(&dev_typ.hlist);
+	hlist_del(&key_typ.hlist);
 }

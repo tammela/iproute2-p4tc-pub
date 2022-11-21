@@ -173,6 +173,8 @@ static int dyna_parse_param(int *argc_p, char ***argv_p, bool in_act,
 
 	if (dyna_add_param(&param, *argv, in_act, n) < 0)
 		return -1;
+	if (!in_act)
+		PREV_ARG();
 
 	addattr_nest_end(n, tail2);
 	(*parms_count)++;
@@ -265,11 +267,6 @@ int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *pname,
 			argc--;
 			argv++;
 		}
-	}
-
-	if (argc > 0) {
-		fprintf(stderr, "Unknown argument\n");
-		goto err_out;
 	}
 
 	if (in_act)
