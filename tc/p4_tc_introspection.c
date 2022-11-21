@@ -421,13 +421,13 @@ int p4tc_get_tables(const char *pname, const char *tname, __u32 *pipeid,
 }
 
 int p4tc_get_table_keys(struct tkey keys[], const char *pname,
-			const char *tname, __u32 tbc_id)
+			const char *tname, __u32 tbl_id)
 {
 	int i = 0;
 	char *line = NULL;
 	__u32 pipeid = 0;
 	char key_name[TABLEKEYNAMSIZ];
-	char type_str[TCLASSNAMSIZ];
+	char type_str[TABLENAMSIZ];
 	char path[PATH_MAX];
 	char key_str[4];
 	size_t len;
@@ -446,7 +446,7 @@ int p4tc_get_table_keys(struct tkey keys[], const char *pname,
 		return -1;
 	}
 
-	if (find_table(f, tname, &pipeid, &tbc_id) < 0) {
+	if (find_table(f, tname, &pipeid, &tbl_id) < 0) {
 		ret = -1;
 		goto out;
 	}

@@ -34,7 +34,7 @@ int str_to_type(const char *type_str);
 struct tkey *p4tc_find_table_key(struct tkey keys[], const char *key_name,
 				 __u32 num_keys);
 int p4tc_get_table_keys(struct tkey keys[], const char *pname,
-			const char *tname, const __u32 tbc_id);
+			const char *tname, const __u32 tbl_id);
 
 struct hdrfield {
 	char name[TEMPLATENAMSZ];

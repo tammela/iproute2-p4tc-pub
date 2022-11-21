@@ -324,9 +324,9 @@ static void p4template_usage(void)
 	fprintf(stderr,
 		"usage: tc p4template create | update pipeline/pname [PIPEID] OPTS\n"
 		"       tc p4tempalte del | get pipeline/[pname] [PIPEID]\n"
-		"Where:  OPTS := NUMTCLASSES PREACTIONS POSTACTIONS STATE\n"
+		"Where:  OPTS := NUMTABLES PREACTIONS POSTACTIONS STATE\n"
 		"	PIPEID := pipeid <32 bit pipeline id>\n"
-		"	NUMTCLASSES := numtclasses <16 bit numtclasses>\n"
+		"	NUMTABLES := numtables <16 bit numtables>\n"
 		"	PREACTIONS := preactions <ACTISPEC>\n"
 		"	POSTACTIONS := postactions <ACTISPEC>\n"
 		"	ACTISPEC := <ACTNAMESPEC> <INDEXSPEC>\n"
@@ -414,63 +414,63 @@ static int print_p4_key(struct rtattr *tb, void *arg)
 	return 0;
 }
 
-static int print_table_class(struct nlmsghdr *n, struct rtattr *arg,
-			     __u32 tbc_id, FILE *f)
+static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
+			    __u32 tbl_id, FILE *f)
 {
-	struct rtattr *tb[P4TC_TCLASS_MAX + 1];
+	struct rtattr *tb[P4TC_TABLE_MAX + 1];
 
-	parse_rtattr_nested(tb, P4TC_TCLASS_MAX, arg);
+	parse_rtattr_nested(tb, P4TC_TABLE_MAX, arg);
 
-	if (tbc_id) {
-		print_uint(PRINT_ANY, "tbcid", "    tclass id %u", tbc_id);
+	if (tbl_id) {
+		print_uint(PRINT_ANY, "tblid", "    table id %u", tbl_id);
 		print_nl();
 	}
 
-	if (tb[P4TC_TCLASS_NAME])
-		print_string(PRINT_ANY, "tname", "    tclass name %s\n",
-			     RTA_DATA(tb[P4TC_TCLASS_NAME]));
+	if (tb[P4TC_TABLE_NAME])
+		print_string(PRINT_ANY, "tname", "    table name %s\n",
+			     RTA_DATA(tb[P4TC_TABLE_NAME]));
 
-	if (tb[P4TC_TCLASS_INFO]) {
-		struct p4tc_table_class_parm *parm;
+	if (tb[P4TC_TABLE_INFO]) {
+		struct p4tc_table_parm *parm;
 
-		parm = RTA_DATA(tb[P4TC_TCLASS_INFO]);
+		parm = RTA_DATA(tb[P4TC_TABLE_INFO]);
 
 		print_uint(PRINT_ANY, "keysz", "    key_sz %u\n",
-			   parm->tbc_keysz);
-		print_uint(PRINT_ANY, "count", "    count %u\n",
-			   parm->tbc_count);
-		print_uint(PRINT_ANY, "entries", "    entries %u\n",
-			   parm->tbc_max_entries);
+			   parm->tbl_keysz);
+		print_uint(PRINT_ANY, "max_entries", "    max entries %u\n",
+			   parm->tbl_max_entries);
 		print_uint(PRINT_ANY, "masks", "    masks %u\n",
-			   parm->tbc_max_masks);
+			   parm->tbl_max_masks);
 		print_uint(PRINT_ANY, "default_key", "    default key %u\n",
-			   parm->tbc_default_key);
+			   parm->tbl_default_key);
+		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
+			   parm->tbl_num_entries);
 
 		print_nl();
 	}
 
-	if (tb[P4TC_TCLASS_KEYS]) {
+	if (tb[P4TC_TABLE_KEYS]) {
 		open_json_array(PRINT_JSON, "keys");
-		print_p4_key(tb[P4TC_TCLASS_KEYS], arg);
+		print_p4_key(tb[P4TC_TABLE_KEYS], arg);
 		close_json_array(PRINT_JSON, NULL);
 	}
 
-	if (tb[P4TC_TCLASS_PREACTIONS]) {
+	if (tb[P4TC_TABLE_PREACTIONS]) {
 		print_string(PRINT_FP, NULL,
 			     "    preactions:\n", NULL);
 		open_json_object("preactions");
 		print_nl();
-		tc_print_action(f, tb[P4TC_TCLASS_PREACTIONS], 0);
+		tc_print_action(f, tb[P4TC_TABLE_PREACTIONS], 0);
 		print_nl();
 		close_json_object();
 	}
 
-	if (tb[P4TC_TCLASS_POSTACTIONS]) {
+	if (tb[P4TC_TABLE_POSTACTIONS]) {
 		print_string(PRINT_FP, NULL,
 			     "    postactions:\n", NULL);
 		open_json_object("postactions");
 		print_nl();
-		tc_print_action(f, tb[P4TC_TCLASS_POSTACTIONS], 0);
+		tc_print_action(f, tb[P4TC_TABLE_POSTACTIONS], 0);
 		print_nl();
 		close_json_object();
 	}
@@ -480,71 +480,12 @@ static int print_table_class(struct nlmsghdr *n, struct rtattr *arg,
 	return 0;
 }
 
-static int print_table_class_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
+static int p4tc_print_table_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
 				   FILE *F)
 {
 	const __u32 *cnt = RTA_DATA(cnt_attr);
 
-	print_uint(PRINT_ANY, "ttcount", "    table class flush count %u", *cnt);
-	print_nl();
-
-	return 0;
-}
-
-static int print_table_instance(struct nlmsghdr *n, struct rtattr *arg,
-				__u32 tbc_id, __u32 ti_id, FILE *f)
-{
-	struct rtattr *tb[P4TC_TINST_MAX + 1];
-
-	parse_rtattr_nested(tb, P4TC_TINST_MAX, arg);
-
-	if (tbc_id) {
-		print_uint(PRINT_ANY, "tbcid", "    table class id %u\n", tbc_id);
-		print_nl();
-	}
-
-	if (ti_id) {
-		print_uint(PRINT_ANY, "tiid", "    table instance id %u\n", ti_id);
-		print_nl();
-	}
-
-	if (tb[P4TC_TINST_CLASS]) {
-		const char *name = RTA_DATA(tb[P4TC_TINST_CLASS]);
-
-		print_string(PRINT_ANY, "tbcname", "    table class name %s\n", name);
-	}
-
-	if (tb[P4TC_TINST_NAME]) {
-		const char *name = RTA_DATA(tb[P4TC_TINST_NAME]);
-
-		print_string(PRINT_ANY, "tiname", "    table instance name %s\n", name);
-	}
-
-	if (tb[P4TC_TINST_CUR_ENTRIES]) {
-		const __u32 *entries = RTA_DATA(tb[P4TC_TINST_CUR_ENTRIES]);
-
-		print_uint(PRINT_ANY, "entries", "    table instance entries %u\n",
-			   *entries);
-	}
-
-	if (tb[P4TC_TINST_MAX_ENTRIES]) {
-		const __u32 *entries = RTA_DATA(tb[P4TC_TINST_MAX_ENTRIES]);
-
-		print_uint(PRINT_ANY, "maxentries", "    table instance max entries %u\n",
-			   *entries);
-	}
-
-	return 0;
-}
-
-static int print_table_instance_flush(struct nlmsghdr *n,
-				      struct rtattr *cnt_attr,
-				      FILE *f)
-{
-	const __u32 *cnt = RTA_DATA(cnt_attr);
-
-	print_uint(PRINT_ANY, "ticount", "    table instance flush count %u",
-		   *cnt);
+	print_uint(PRINT_ANY, "ttcount", "    table flush count %u", *cnt);
 	print_nl();
 
 	return 0;
@@ -697,11 +638,11 @@ static int print_pipeline(struct nlmsghdr *n, FILE *f, struct rtattr *arg)
 		print_nl();
 	}
 
-	if (tb[P4TC_PIPELINE_NUMTCLASSES]) {
-		__u16 num_tclasses =
-		    *((__u16 *) RTA_DATA(tb[P4TC_PIPELINE_NUMTCLASSES]));
-		print_uint(PRINT_ANY, "pnumtclasses", "    num_tclasses %u",
-			   num_tclasses);
+	if (tb[P4TC_PIPELINE_NUMTABLES]) {
+		__u16 num_tables =
+		    *((__u16 *) RTA_DATA(tb[P4TC_PIPELINE_NUMTABLES]));
+		print_uint(PRINT_ANY, "pnumtables", "    num_tables %u",
+			   num_tables);
 		print_nl();
 	}
 
@@ -778,33 +719,18 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 			}
 		}
 		break;
-	case P4TC_OBJ_TABLE_CLASS:
+	case P4TC_OBJ_TABLE:
 		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
-			print_table_class_flush(n, tb[P4TC_COUNT], f);
+			p4tc_print_table_flush(n, tb[P4TC_COUNT], f);
 		else {
 			if (tb[P4TC_PATH]) {
 				ids = RTA_DATA(tb[P4TC_PATH]);
-				print_table_class(n, tb[P4TC_PARAMS], ids[0],
-						  f);
+				p4tc_print_table(n, tb[P4TC_PARAMS], ids[0], f);
 			} else {
-				print_table_class(n, tb[P4TC_PARAMS], 0, f);
+				p4tc_print_table(n, tb[P4TC_PARAMS], 0, f);
 			}
 		}
 		break;
-	case P4TC_OBJ_TABLE_INST: {
-		ids = RTA_DATA(tb[P4TC_PATH]);
-		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
-			print_table_instance_flush(n, tb[P4TC_COUNT], f);
-		else {
-			if (tb[P4TC_PATH])
-				print_table_instance(n, tb[P4TC_PARAMS], ids[0],
-						     ids[1], f);
-			else
-				print_table_instance(n, tb[P4TC_PARAMS], 0,
-						     0, f);
-		}
-		break;
-	}
 	case P4TC_OBJ_HDR_FIELD:
 		ids = RTA_DATA(tb[P4TC_PATH]);
 		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
@@ -892,13 +818,9 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
 			     "metadata");
 		break;
-	case P4TC_OBJ_TABLE_CLASS:
+	case P4TC_OBJ_TABLE:
 		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
-			     "table class");
-		break;
-	case P4TC_OBJ_TABLE_INST:
-		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
-			     "table instance");
+			     "table");
 		break;
 	case P4TC_OBJ_ACT:
 		print_string(PRINT_ANY, "obj", "template obj type %s\n",
@@ -949,16 +871,12 @@ int get_obj_type(const char *str_obj_type)
 		return P4TC_OBJ_PIPELINE;
 	else if (!strcmp(str_obj_type, "metadata"))
 		return P4TC_OBJ_META;
-	else if (!strcmp(str_obj_type, "tclass"))
-		return P4TC_OBJ_TABLE_CLASS;
-	else if (!strcmp(str_obj_type, "tinst"))
-		return P4TC_OBJ_TABLE_INST;
+	else if (!strcmp(str_obj_type, "table"))
+		return P4TC_OBJ_TABLE;
 	else if (!strcmp(str_obj_type, "hdrfield"))
 		return P4TC_OBJ_HDR_FIELD;
 	else if (!strcmp(str_obj_type, "action"))
 		return P4TC_OBJ_ACT;
-	else if (!strcmp(str_obj_type, "table"))
-		return P4TC_OBJ_TABLE_ENTRY;
 
 	return -1;
 }
@@ -1179,114 +1097,8 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	return pipeid;
 }
 
-static int parse_table_instance_data(int *argc_p, char ***argv_p,
-				     struct nlmsghdr *n, char *p4tcpath[],
-				     int cmd, unsigned int *flags)
-{
-	char *cbname = NULL, *tbcname = NULL, *tiname = NULL;
-	char full_tbcname[TCLASSNAMSIZ] = {0};
-	__u32 pipeid = 0, tbc_id = 0, ti_id = 0;
-	bool set_max_entries = false;
-	struct rtattr *count = NULL;
-	char **argv = *argv_p;
-	__u32 maxentries = 0;
-	int argc = *argc_p;
-	int ret = 0;
-	struct rtattr *tail;
-	__u32 path[2];
-
-	cbname = p4tcpath[PATH_CBNAME_IDX];
-	tbcname = p4tcpath[PATH_TBCNAME_IDX];
-	tiname = p4tcpath[PATH_TINAME_IDX];
-
-	while (argc > 0) {
-		if (cmd == RTM_NEWP4TEMPLATE) {
-			if (strcmp(*argv, "maxentries") == 0) {
-				NEXT_ARG();
-				if (get_u32(&maxentries, *argv, 10) < 0)
-					return -1;
-				set_max_entries = true;
-			} else if (strcmp(*argv, "pipeid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&pipeid, *argv, 10) < 0)
-					return -1;
-			} else if (strcmp(*argv, "tbcid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&tbc_id, *argv, 10) < 0)
-					return -1;
-			} else if (strcmp(*argv, "tinstid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&ti_id, *argv, 10) < 0)
-					return -1;
-			} else {
-				fprintf(stderr, "Unknown arg %s\n", *argv);
-				return -1;
-			}
-		} else {
-			if (strcmp(*argv, "pipeid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&pipeid, *argv, 10) < 0)
-					return -1;
-			} else if (strcmp(*argv, "tbcid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&tbc_id, *argv, 10) < 0)
-					return -1;
-			} else if (strcmp(*argv, "tinstid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&ti_id, *argv, 10) < 0)
-					return -1;
-			} else {
-				fprintf(stderr, "Unknown arg %s\n", *argv);
-				return -1;
-			}
-		}
-		argv++;
-		argc--;
-	}
-
-	if (!tiname && !ti_id)
-		*flags |= NLM_F_ROOT;
-
-	/* Always add count nest unless it's a dump */
-	if (!((*flags & NLM_F_ROOT) && cmd == RTM_GETP4TEMPLATE))
-		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
-
-	path[0] = tbc_id;
-	path[1] = ti_id;
-	addattr_l(n, MAX_MSG, P4TC_PATH, path, sizeof(__u32) * 2);
-
-	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
-	if (!tail)
-		return -1;
-
-	if (cbname && tbcname) {
-		ret = concat_cb_name(full_tbcname, cbname, tbcname,
-				     TCLASSNAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table class name too long\n");
-			return -1;
-		}
-	}
-
-	if (!STR_IS_EMPTY(full_tbcname))
-		addattrstrz(n, MAX_MSG, P4TC_TINST_CLASS, full_tbcname);
-	if (tiname)
-		addattrstrz(n, MAX_MSG, P4TC_TINST_NAME, tiname);
-	if (set_max_entries)
-		addattr32(n, MAX_MSG, P4TC_TINST_MAX_ENTRIES, maxentries);
-	addattr_nest_end(n, tail);
-
-	if (count)
-		addattr_nest_end(n, count);
-
-	*argc_p = argc;
-	*argv_p = argv;
-
-	return pipeid;
-}
-
-static int tc_parse_table_key(struct nlmsghdr *n, int current_key,
-			      bool *is_default, int *argc_p, char ***argv_p)
+static int parse_table_key(struct nlmsghdr *n, int current_key,
+			   bool *is_default, int *argc_p, char ***argv_p)
 {
 	struct rtattr *tail;
 	char **argv = *argv_p;
@@ -1342,34 +1154,33 @@ out:
 	return ret;
 }
 
-static int parse_table_class_data(int *argc_p, char ***argv_p,
-				  struct nlmsghdr *n, char *p4tcpath[],
-				  int cmd, unsigned int *flags)
+static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			    char *p4tcpath[], int cmd, unsigned int *flags)
 {
-	struct p4tc_table_class_parm tclass = {0};
-	char full_tbcname[TCLASSNAMSIZ] = {0};
+	struct p4tc_table_parm table = {0};
+	char full_tblname[TABLENAMSIZ] = {0};
 	struct rtattr *count = NULL;
 	struct rtattr *tail2 = NULL;
 	struct rtattr *tail = NULL;
 	char **argv = *argv_p;
 	int current_key = 0;
 	int argc = *argc_p;
-	__u32 tbc_id = 0;
+	__u32 tbl_id = 0;
 	__u32 pipeid = 0;
 	int ret = 0;
-	char *cbname, *tbcname;
+	char *cbname, *tblname;
 	bool is_default;
 
 	cbname = p4tcpath[PATH_CBNAME_IDX];
-	tbcname = p4tcpath[PATH_TBCNAME_IDX];
+	tblname = p4tcpath[PATH_TBLNAME_IDX];
 	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
 	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
 	while (argc > 0) {
 		is_default = false;
 		if (cmd == RTM_NEWP4TEMPLATE) {
-			if (strcmp(*argv, "tbcid") == 0) {
+			if (strcmp(*argv, "tblid") == 0) {
 				NEXT_ARG();
-				if (get_u32(&tbc_id, *argv, 10) < 0) {
+				if (get_u32(&tbl_id, *argv, 10) < 0) {
 					ret = -1;
 					goto out;
 				}
@@ -1379,34 +1190,29 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 					return -1;
 			} else if (strcmp(*argv, "keysz") == 0) {
 				NEXT_ARG();
-				if (get_u32(&tclass.tbc_keysz, *argv, 10) < 0)
+				if (get_u32(&table.tbl_keysz, *argv, 10) < 0)
 					return -1;
-				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_KEYSZ;
-			} else if (strcmp(*argv, "tcount") == 0) {
-				NEXT_ARG();
-				if (get_u32(&tclass.tbc_count, *argv, 10) < 0)
-					return -1;
-				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_COUNT;
+				table.tbl_flags |= P4TC_TABLE_FLAGS_KEYSZ;
 			} else if (strcmp(*argv, "tentries") == 0) {
 				NEXT_ARG();
-				if (get_u32(&tclass.tbc_max_entries, *argv, 10) < 0)
+				if (get_u32(&table.tbl_max_entries, *argv, 10) < 0)
 					return -1;
-				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_MAX_ENTRIES;
+				table.tbl_flags |= P4TC_TABLE_FLAGS_MAX_ENTRIES;
 			} else if (strcmp(*argv, "nummasks") == 0) {
 				NEXT_ARG();
-				if (get_u32(&tclass.tbc_max_masks, *argv, 10) < 0)
+				if (get_u32(&table.tbl_max_masks, *argv, 10) < 0)
 					return -1;
-				tclass.tbc_flags |= P4TC_TCLASS_FLAGS_MAX_MASKS;
+				table.tbl_flags |= P4TC_TABLE_FLAGS_MAX_MASKS;
 			} else if (strcmp(*argv, "keys") == 0) {
 				if (!tail2) {
 					tail2 = addattr_nest(n, MAX_MSG,
-							     P4TC_TCLASS_KEYS | NLA_F_NESTED);
+							     P4TC_TABLE_KEYS | NLA_F_NESTED);
 				}
-				ret = tc_parse_table_key(n, current_key,
-							 &is_default, &argc,
-							 &argv);
+				ret = parse_table_key(n, current_key,
+						      &is_default, &argc,
+						      &argv);
 
-				if ((tclass.tbc_flags & P4TC_TCLASS_FLAGS_DEFAULT_KEY) &&
+				if ((table.tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) &&
 				    is_default) {
 					fprintf(stderr,
 						"Unable to set default key twice");
@@ -1416,8 +1222,8 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				current_key++;
 
 				if (is_default) {
-					tclass.tbc_default_key = current_key;
-					tclass.tbc_flags |= P4TC_TCLASS_FLAGS_DEFAULT_KEY;
+					table.tbl_default_key = current_key;
+					table.tbl_flags |= P4TC_TABLE_FLAGS_DEFAULT_KEY;
 				}
 
 				if (ret < 0)
@@ -1433,7 +1239,7 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				argv++;
 				argc--;
 				if (parse_action(&argc, &argv,
-						 P4TC_TCLASS_PREACTIONS | NLA_F_NESTED, n)) {
+						 P4TC_TABLE_PREACTIONS | NLA_F_NESTED, n)) {
 					fprintf(stderr, "Illegal action\n");
 					return -1;
 				}
@@ -1442,7 +1248,7 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				argv++;
 				argc--;
 				if (parse_action(&argc, &argv,
-						 P4TC_TCLASS_POSTACTIONS | NLA_F_NESTED, n)) {
+						 P4TC_TABLE_POSTACTIONS | NLA_F_NESTED, n)) {
 					fprintf(stderr, "Illegal action\n");
 					return -1;
 				}
@@ -1451,7 +1257,7 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				argv++;
 				argc--;
 				if (parse_action(&argc, &argv,
-						 P4TC_TCLASS_DEFAULT_HIT | NLA_F_NESTED, n)) {
+						 P4TC_TABLE_DEFAULT_HIT | NLA_F_NESTED, n)) {
 					fprintf(stderr, "Illegal action\n");
 					return -1;
 				}
@@ -1460,7 +1266,7 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				argv++;
 				argc--;
 				if (parse_action(&argc, &argv,
-						 P4TC_TCLASS_DEFAULT_MISS | NLA_F_NESTED, n)) {
+						 P4TC_TABLE_DEFAULT_MISS | NLA_F_NESTED, n)) {
 					fprintf(stderr, "Illegal action\n");
 					return -1;
 				}
@@ -1470,9 +1276,9 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 				return -1;
 			}
 		} else {
-			if (strcmp(*argv, "tbcid") == 0) {
+			if (strcmp(*argv, "tblid") == 0) {
 				NEXT_ARG();
-				if (get_u32(&tbc_id, *argv, 10) < 0) {
+				if (get_u32(&tbl_id, *argv, 10) < 0) {
 					ret = -1;
 					goto out;
 				}
@@ -1490,29 +1296,29 @@ static int parse_table_class_data(int *argc_p, char ***argv_p,
 	}
 
 	if (cmd == RTM_NEWP4TEMPLATE)
-		addattr_l(n, MAX_MSG, P4TC_TCLASS_INFO, &tclass,
-			  sizeof(tclass));
+		addattr_l(n, MAX_MSG, P4TC_TABLE_INFO, &table,
+			  sizeof(table));
 
 	ret = 0;
-	if (cbname && tbcname) {
-		ret = concat_cb_name(full_tbcname, cbname, tbcname,
-				     TCLASSNAMSIZ);
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     TABLENAMSIZ);
 		if (ret < 0) {
-			fprintf(stderr, "table class name too long\n");
+			fprintf(stderr, "table name too long\n");
 			return -1;
 		}
 	}
 
-	if (!STR_IS_EMPTY(full_tbcname))
-		addattrstrz(n, MAX_MSG, P4TC_TCLASS_NAME, full_tbcname);
+	if (!STR_IS_EMPTY(full_tblname))
+		addattrstrz(n, MAX_MSG, P4TC_TABLE_NAME, full_tblname);
 
 	addattr_nest_end(n, tail);
 
-	if (!cbname && !tbcname && !tbc_id)
+	if (!cbname && !tblname && !tbl_id)
 		*flags |= NLM_F_ROOT;
 
-	if (tbc_id)
-		addattr32(n, MAX_MSG, P4TC_PATH, tbc_id);
+	if (tbl_id)
+		addattr32(n, MAX_MSG, P4TC_PATH, tbl_id);
 
 	addattr_nest_end(n, count);
 
@@ -1651,7 +1457,7 @@ static int parse_pipeline_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	struct rtattr *count;
 	struct rtattr *nest;
 	__u32 maxrules;
-	__u16 numtclasses;
+	__u16 numtables;
 
 	if (cmd == RTM_NEWP4TEMPLATE) {
 		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
@@ -1669,13 +1475,13 @@ static int parse_pipeline_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 
 				addattr32(n, MAX_MSG, P4TC_PIPELINE_MAXRULES,
 					  maxrules);
-			} else if (strcmp(*argv, "numtclasses") == 0) {
+			} else if (strcmp(*argv, "numtables") == 0) {
 				NEXT_ARG();
-				if (get_u16(&numtclasses, *argv, 10) < 0)
+				if (get_u16(&numtables, *argv, 10) < 0)
 					return -1;
 
-				addattr16(n, MAX_MSG, P4TC_PIPELINE_NUMTCLASSES,
-					  numtclasses);
+				addattr16(n, MAX_MSG, P4TC_PIPELINE_NUMTABLES,
+					  numtables);
 			} else if (strcmp(*argv, "preactions") == 0) {
 				argv++;
 				argc--;
@@ -1809,17 +1615,9 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 		req.t.pipeid = pipeid;
 
 		break;
-	case P4TC_OBJ_TABLE_CLASS:
-		pipeid = parse_table_class_data(&argc, &argv, &req.n, p4tcpath,
-						cmd, &flags);
-		if (pipeid < 0)
-			return -1;
-		req.t.pipeid = pipeid;
-
-		break;
-	case P4TC_OBJ_TABLE_INST:
-		pipeid = parse_table_instance_data(&argc, &argv, &req.n,
-						   p4tcpath, cmd, &flags);
+	case P4TC_OBJ_TABLE:
+		pipeid = parse_table_data(&argc, &argv, &req.n, p4tcpath, cmd,
+					  &flags);
 		if (pipeid < 0)
 			return -1;
 		req.t.pipeid = pipeid;

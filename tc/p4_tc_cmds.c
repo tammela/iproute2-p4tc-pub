@@ -447,7 +447,7 @@ int get_table_type(struct action_util *a, const char *op_components[],
 
 	rc = p4tc_get_tables(f1, f2, &pipeid, &tbcid);
 	if (rc < 0) {
-		fprintf(stderr, "Unable to find table class %s.%s\n", f1, f2);
+		fprintf(stderr, "Unable to find table %s.%s\n", f1, f2);
 		return -1;
 	}
 
@@ -581,7 +581,7 @@ int get_key_type(struct action_util *a, const char *op_components[],
 
 	rc = p4tc_get_tables(f1, f2, &pipeid, &tbcid);
 	if (rc < 0) {
-		fprintf(stderr, "Unable to find table class %s.%s\n", f1, f2);
+		fprintf(stderr, "Unable to find table %s.%s\n", f1, f2);
 		return -1;
 	}
 
@@ -1189,7 +1189,7 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 	if (*argv && strcmp(*argv, "keyid") == 0) {
 		NEXT_ARG();
 		if (get_u32(&keyid, *argv, 10) < 0) {
-			fprintf(stderr, "Invalid table class id\n");
+			fprintf(stderr, "Invalid table id\n");
 			return -1;
 		}
 	}
