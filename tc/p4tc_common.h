@@ -5,6 +5,8 @@
 #include "list.h"
 #include "tc_util.h"
 
+#include <uapi/linux/p4tc.h>
+
 #ifndef INTROSPECTION_PATH
 #define INTROSPECTION_PATH "/etc/iproute2/introspection"
 #endif
@@ -43,6 +45,16 @@ struct p4_param_s {
 	int containid;
 	__u8 startbit;
 	__u8 endbit;
+};
+
+struct p4_reg_s {
+	char pname[PIPELINENAMSIZ];
+	char name[REGISTERNAMSIZ];
+	__u32 pipeid;
+	__u32 id;
+	int containid;
+	__u32 startbit;
+	__u32 endbit;
 };
 
 void parse_path(char *path, char **p4tcpath, const char *separator);

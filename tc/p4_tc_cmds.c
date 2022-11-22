@@ -152,6 +152,8 @@ int get_act_param_type(struct action_util *a, const char *op_components[],
 		       struct p4tc_u_internal_operand *intern_op);
 int get_dev_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op);
+int get_register_type(struct action_util *a, const char *op_components[],
+		      struct p4tc_u_internal_operand *intern_op);
 
 static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 				FILE *f);
@@ -171,6 +173,8 @@ static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
 			   FILE *f);
 static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
 				 FILE *f);
+static void print_register_type(struct p4tc_u_operand *oper, void *oppath,
+				FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
@@ -188,6 +192,8 @@ static struct opnd_type_s opnd_types [] = {
 	 print_act_param_type},
 	{P4TC_OPER_CONST, P4T_PATH, "dev", get_dev_type,
 	 print_dev_type},
+	{P4TC_OPER_REG, P4T_PATH, "register", get_register_type,
+	 print_register_type},
 };
 
 static struct opnd_type_s *get_optype_byname(const char *name)
@@ -360,6 +366,7 @@ int get_const_type(struct action_util *a, const char *op_components[],
 	op->oper_cbitsize = t->bitsz;
 	op->pipeid = 0;
 
+	val.bitsz = bitsz;
 	if (t->bitsz > 32) {
 		intern_op->path = calloc(1, t->bitsz >> 3);
 		if (!intern_op->path) {
@@ -616,6 +623,50 @@ int get_key_type(struct action_util *a, const char *op_components[],
 	return 0;
 }
 
+int get_register_type(struct action_util *a, const char *op_components[],
+		 struct p4tc_u_internal_operand *intern_op)
+{
+	const char *f2 = op_components[1];
+	const char *f3 = op_components[2];
+	struct p4_reg_s regs[32];
+	struct p4tc_u_operand *op = &intern_op->op;
+	int num_regs = 0;
+	char *pr = NULL;
+	int idx = 0;
+	int rc;
+	int i;
+
+	rc = sscanf(f3, "%m[a-z0-9_/.%][%d]", &pr, &idx);
+	if (rc != 2 && idx >= 0) {
+		fprintf(stderr, "Invalid register name %s\n", f2);
+		return -1;
+	}
+
+	rc = p4tc_get_pipeline_regs(regs, f2, &num_regs);
+	if (rc < 0)
+		return -1;
+
+	for (i = 0; i < num_regs; i++) {
+		if (strncmp(regs[i].name, pr, REGISTERNAMSIZ) == 0)
+			break;
+	}
+
+	if (i == num_regs) {
+		fprintf(stderr, "Unable to find register by name\n");
+		return -1;
+	}
+
+	op->pipeid = regs[i].pipeid;
+	op->oper_type = P4TC_OPER_REG;
+	op->immedv = regs[i].id;
+	op->immedv2 = idx;
+	op->oper_datatype = regs[i].containid;
+	op->oper_startbit = regs[i].startbit;
+	op->oper_endbit = regs[i].endbit;
+
+	return 0;
+}
+
 int get_res_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op)
 {
@@ -679,10 +730,10 @@ static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 
 		if (t->bitsz > 32) {
 			val.value = oppath;
-			t->print_p4t(t->name, &val, f);
+			t->print_p4t("value", &val, f);
 		} else {
 			val.value = &oper->immedv;
-			t->print_p4t(t->name, &val, f);
+			t->print_p4t("value", &val, f);
 		}
 	}
 }
@@ -803,6 +854,49 @@ static void print_metadata_type(struct p4tc_u_operand *oper,
 	if (oppath)
 		print_string(PRINT_ANY, "path", "\t    path %s", oppath);
 
+}
+
+static void print_register_type(struct p4tc_u_operand *oper, void *oppath,
+				FILE *f)
+{
+	struct p4_type_s *p4_type = get_p4type_byid(oper->oper_datatype);
+	struct p4_reg_s regs[32];
+	int num_regs;
+	int i;
+
+	num_regs = p4tc_get_regs(regs);
+	if (num_regs < 0) {
+		fprintf(stderr, "Failed to find registers\n");
+		return;
+	}
+
+	for (i = 0; i < num_regs; i++) {
+		if (regs[i].pipeid == oper->pipeid &&
+		    regs[i].id == oper->immedv)
+			break;
+	}
+
+	if (i == num_regs) {
+		fprintf(stderr, "Unable to find register by name\n");
+		return;
+	}
+
+	print_string(PRINT_ANY, "type", " type %s\n", "register");
+
+	print_uint(PRINT_ANY, "pid", "\t    pipeline id %u\n", regs[i].pipeid);
+	print_string(PRINT_ANY, "pname", "\t    pipeline name %s\n",
+		     regs[i].pname);
+
+	print_string(PRINT_ANY, "container", "\t    container %s",
+		     p4_type->name);
+	print_uint(PRINT_ANY, "startbit", " startbit %u", oper->oper_startbit);
+	print_uint(PRINT_ANY, "endbit", " endbit %u\n", oper->oper_endbit);
+	print_uint(PRINT_ANY, "idx", "\t    register index %u\n",
+		   oper->immedv2);
+
+	print_string(PRINT_ANY, "regname", "\t    register name %s\n",
+		     regs[i].name);
+	print_uint(PRINT_ANY, "regid", "\t    register id %u\n", regs[i].id);
 }
 
 static void print_operand_content(const char *ABC,
