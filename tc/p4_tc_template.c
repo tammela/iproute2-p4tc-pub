@@ -330,6 +330,122 @@ static void p4template_usage(void)
 	exit(-1);
 }
 
+static int print_register_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
+				FILE *f)
+{
+	const __u32 *cnt = RTA_DATA(cnt_attr);
+
+	print_uint(PRINT_ANY, "count", "    register flush count %u", *cnt);
+	print_nl();
+
+	return 0;
+}
+
+static int print_register_template_value(struct rtattr *arg,
+					 struct p4tc_u_register *parm,
+					 struct p4_type_s *type,
+					 char *name, FILE *f)
+{
+	if (arg && type) {
+		size_t container_bytesz = type->bitsz >> 3;
+		void *value = RTA_DATA(arg);
+		__u32 len = 0, value_len;
+		struct p4_type_value val;
+		void *mask;
+		int i = 0;
+
+		mask = calloc(1, container_bytesz);
+		if (!mask)
+			return -1;
+
+		value_len = RTA_PAYLOAD(arg);
+		if (parm->flags & P4TC_REGISTER_FLAGS_INDEX) {
+			SPRINT_BUF(prefix);
+
+			val.value = value;
+			val.mask = mask;
+
+			snprintf(prefix, SPRINT_BSIZE, "%s[%d]", name,
+				 parm->index);
+
+			print_string(PRINT_FP, NULL, "        ", NULL);
+			if (type->print_p4t)
+				type->print_p4t(prefix, prefix, &val, f);
+			print_nl();
+		} else {
+			open_json_array(PRINT_JSON, "values");
+			while (len < value_len) {
+				SPRINT_BUF(prefix);
+
+				val.value = value;
+				val.mask = mask;
+
+				snprintf(prefix, SPRINT_BSIZE, "%s[%d]", name,
+					 i);
+				open_json_object(NULL);
+				print_string(PRINT_FP, NULL, "        ", NULL);
+				if (type->print_p4t)
+					type->print_p4t(prefix, prefix, &val,
+							f);
+				print_nl();
+				close_json_object();
+
+				value += (container_bytesz);
+				len += (container_bytesz);
+				i++;
+			}
+			close_json_array(PRINT_JSON, NULL);
+		}
+
+		free(mask);
+	}
+
+	return 0;
+}
+
+static int print_register_template(struct nlmsghdr *n, struct rtattr *arg,
+				   __u32 reg_id, FILE *f)
+{
+	struct rtattr *tb[P4TC_ACT_MAX + 1];
+	struct p4tc_u_register *parm;
+	char *name;
+
+	parse_rtattr_nested(tb, P4TC_REGISTER_MAX, arg);
+
+	if (tb[P4TC_REGISTER_NAME]) {
+		name = RTA_DATA(tb[P4TC_REGISTER_NAME]);
+		print_string(PRINT_ANY, "regname", "    register name %s\n", name);
+	}
+	if (reg_id)
+		print_uint(PRINT_ANY, "regid", "    register id %u\n", reg_id);
+
+	if (tb[P4TC_REGISTER_INFO]) {
+		struct p4_type_s *type = NULL;
+
+		parm = RTA_DATA(tb[P4TC_REGISTER_INFO]);
+
+		if (parm->flags & P4TC_REGISTER_FLAGS_DATATYPE) {
+			type = get_p4type_byid(parm->datatype);
+			print_string(PRINT_ANY, "containertype", "    container type %s\n",
+				     type->name);
+		}
+		if (parm->flags & P4TC_REGISTER_FLAGS_STARTBIT)
+			print_uint(PRINT_ANY, "startbit", "    startbit %u\n",
+				   parm->startbit);
+		if (parm->flags & P4TC_REGISTER_FLAGS_ENDBIT)
+			print_uint(PRINT_ANY, "endbit", "    endbit %u\n",
+				   parm->endbit);
+		if (parm->flags & P4TC_REGISTER_FLAGS_NUMELEMS)
+			print_uint(PRINT_ANY, "numelems", "    number of elements %u\n",
+				   parm->num_elems);
+
+		print_register_template_value(tb[P4TC_REGISTER_VALUE], parm,
+					      type, name, f);
+	}
+
+	return 0;
+}
+
 static int print_hdrfield(struct rtattr *tb, __u32 parser_id,
 			   __u32 hdrfield_id, FILE *f)
 {
@@ -916,6 +1032,19 @@ static int print_p4tmpl_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 				print_action_template(n, tb[P4TC_PARAMS], 0, f);
 		}
 		break;
+	case P4TC_OBJ_REGISTER:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_P4TC_TMPL_DEL && (n->nlmsg_flags & NLM_F_ROOT))
+			print_register_flush(n, tb[P4TC_COUNT], f);
+		else {
+			if (tb[P4TC_PATH])
+				print_register_template(n, tb[P4TC_PARAMS],
+							ids[0], f);
+			else
+				print_register_template(n, tb[P4TC_PARAMS], 0,
+							f);
+		}
+		break;
 	default:
 		break;
 	}
@@ -992,6 +1121,11 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	case P4TC_OBJ_ACT:
 		print_string(PRINT_ANY, "obj", "template obj type %s\n",
 			     "action template");
+		break;
+	case P4TC_OBJ_REGISTER:
+		print_string(PRINT_ANY, "obj", "template obj type %s\n",
+			     "register");
+		break;
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
@@ -1017,6 +1151,243 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	}
 
 	return 0;
+}
+
+static int parse_register_value(char *value_path,
+				struct p4tc_u_register *parms,
+				struct p4_type_value *val)
+{
+	char *p4tcpath[MAX_PATH_COMPONENTS] = {0};
+	int ret = 0, base = 10;
+	char *type_name, *value_arg;
+	struct p4_type_s *type;
+	__u32 bitsz;
+
+	parse_path(value_path, p4tcpath, ".");
+
+	if (strcmp(p4tcpath[0], "constant")) {
+		fprintf(stderr, "value must be constant\n");
+		return -1;
+	}
+
+	type_name = p4tcpath[1];
+	type = get_p4type_byarg(type_name, &bitsz);
+	if (!type) {
+		fprintf(stderr, "Invalid type %s\n", type_name);
+		return -1;
+	}
+	parms->datatype = type->containid;
+	parms->startbit = 0;
+	parms->endbit = bitsz - 1;
+	parms->flags |= P4TC_REGISTER_FLAGS_STARTBIT;
+	parms->flags |= P4TC_REGISTER_FLAGS_ENDBIT;
+
+	if (bitsz > 64) {
+		fprintf(stderr,
+			"Unable to parse argument with more than 64 bits\n");
+		return -1;
+	}
+
+	val->value = calloc(1, type->bitsz >> 3);
+	if (!val->value) {
+		fprintf(stderr, "Out of memory\n");
+		return -1;
+	}
+	val->mask = calloc(1, type->bitsz >> 3);
+	if (!val->mask) {
+		fprintf(stderr, "Out of memory\n");
+		free(val->value);
+		return -1;
+	}
+
+	value_arg = p4tcpath[2];
+	if (strnlen(value_arg, 2) == 2 && strncmp(value_arg, "0x", 2) == 0)
+		base = 16;
+
+	val->bitsz = bitsz;
+	if (type->parse_p4t(val, value_arg, base) < 0)
+		ret = -1;
+
+	return ret;
+}
+
+static int parse_register_data_type(const char *type_arg,
+				    struct p4tc_u_register *parms)
+{
+	struct p4_type_s *type;
+	__u32 bitsz;
+
+	type = get_p4type_byarg(type_arg, &bitsz);
+	if (!type)
+		return -1;
+
+	parms->datatype = type->containid;
+	parms->startbit = 0;
+	parms->endbit = bitsz - 1;
+	parms->flags |= P4TC_REGISTER_FLAGS_DATATYPE;
+	parms->flags |= P4TC_REGISTER_FLAGS_STARTBIT;
+	parms->flags |= P4TC_REGISTER_FLAGS_ENDBIT;
+
+	return 0;
+}
+
+static int parse_register_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			       char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	char full_regname[REGISTERNAMSIZ] = {0};
+	struct p4tc_u_register parms = {0};
+	struct p4_type_value val = {0};
+	struct rtattr *count = NULL;
+	struct rtattr *nest = NULL;
+	bool parsed_value = false;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	__u32 regid = 0;
+	__u32 pipeid = 0;
+	int ret = 0;
+	char *regname;
+
+	while (argc > 0) {
+		if (cmd == RTM_P4TC_TMPL_CREATE) {
+			if (strcmp(*argv, "pipeid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&pipeid, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+			} else if (strcmp(*argv, "regid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&regid, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+			} else if (strcmp(*argv, "type") == 0) {
+				NEXT_ARG();
+				if (parse_register_data_type(*argv, &parms) < 0) {
+					ret = -1;
+					goto out;
+				}
+			} else if (strcmp(*argv, "numelems") == 0) {
+				NEXT_ARG();
+				if (get_u32(&parms.num_elems, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+				parms.flags |= P4TC_REGISTER_FLAGS_NUMELEMS;
+			} else if (strcmp(*argv, "index") == 0) {
+				NEXT_ARG();
+				if (get_u32(&parms.index, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+				parms.flags |= P4TC_REGISTER_FLAGS_INDEX;
+			} else if (strcmp(*argv, "value") == 0) {
+				NEXT_ARG();
+				if (parse_register_value(*argv, &parms, &val) < 0) {
+					ret = -1;
+					goto out;
+				}
+				parsed_value = true;
+			} else {
+				fprintf(stderr, "Unknown arg %s\n", *argv);
+				ret = -1;
+				goto out;
+			}
+		} else {
+			if (strcmp(*argv, "pipeid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&pipeid, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+			} else if (strcmp(*argv, "regid") == 0) {
+				NEXT_ARG();
+				if (get_u32(&regid, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+			} else if (strcmp(*argv, "index") == 0) {
+				NEXT_ARG();
+				if (get_u32(&parms.index, *argv, 10) < 0) {
+					ret = -1;
+					goto out;
+				}
+				parms.flags |= P4TC_REGISTER_FLAGS_INDEX;
+			} else {
+				fprintf(stderr, "Unknown arg %s\n", *argv);
+				ret = -1;
+				goto out;
+			}
+		}
+
+		argv++;
+		argc--;
+	}
+
+	regname = p4tcpath[PATH_REGNAME_IDX];
+
+	if (regname)
+		ret = try_strncpy(full_regname, regname, REGISTERNAMSIZ);
+
+	if (ret < 0) {
+		fprintf(stderr, "register name too long\n");
+		ret = -1;
+		goto out;
+	}
+
+	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+	if (!regname && !regid)
+		*flags |= NLM_F_ROOT;
+
+	if (regid)
+		addattr32(n, MAX_MSG, P4TC_PATH, regid);
+
+	if ((parms.flags & P4TC_REGISTER_FLAGS_DATATYPE) ||
+	    parms.flags & P4TC_REGISTER_FLAGS_NUMELEMS ||
+	    parms.flags & P4TC_REGISTER_FLAGS_INDEX || parsed_value ||
+	    !STR_IS_EMPTY(full_regname))
+		nest = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	if (!STR_IS_EMPTY(full_regname))
+		addattrstrz(n, MAX_MSG, P4TC_REGISTER_NAME, full_regname);
+
+	if (parsed_value) {
+		struct p4_type_s *type;
+		size_t container_size;
+
+		if (!(parms.flags & P4TC_REGISTER_FLAGS_INDEX)) {
+			fprintf(stderr,
+				"Must specify index if specifying value");
+			ret = -1;
+			goto out;
+		}
+
+		type = get_p4type_byid(parms.datatype);
+		container_size = type->bitsz >> 3;
+		addattr_l(n, MAX_MSG, P4TC_REGISTER_VALUE, val.value,
+			  container_size);
+	}
+
+	if ((parms.flags & P4TC_REGISTER_FLAGS_DATATYPE) ||
+	    parms.flags & P4TC_REGISTER_FLAGS_NUMELEMS ||
+	    parms.flags & P4TC_REGISTER_FLAGS_INDEX)
+		addattr_l(n, MAX_MSG, P4TC_REGISTER_INFO, &parms,
+			  sizeof(parms));
+
+	if (nest)
+		addattr_nest_end(n, nest);
+
+	addattr_nest_end(n, count);
+
+	ret = pipeid;
+
+out:
+	*argc_p = argc;
+	*argv_p = argv;
+	free(val.value);
+	free(val.mask);
+
+	return ret;
 }
 
 static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
@@ -1872,6 +2243,14 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 	case P4TC_OBJ_ACT:
 		pipeid = parse_action_data(&argc, &argv, &req.n, p4tcpath, cmd,
 					&flags);
+		if (pipeid < 0)
+			return -1;
+		req.t.pipeid = pipeid;
+
+		break;
+	case P4TC_OBJ_REGISTER:
+		pipeid = parse_register_data(&argc, &argv, &req.n, p4tcpath,
+					     cmd, &flags);
 		if (pipeid < 0)
 			return -1;
 		req.t.pipeid = pipeid;
