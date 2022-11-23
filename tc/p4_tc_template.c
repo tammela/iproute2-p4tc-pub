@@ -848,18 +848,16 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	return 0;
 }
 
-#define PATH_SEPARATOR "/"
-
 /* PATH SYNTAX: tc p4template objtype/pname/...  */
-void parse_path(char *path, char **p4tcpath)
+void parse_path(char *path, char **p4tcpath, const char *separator)
 {
 	int i = 0;
 	char *component;
 
-	component = strtok(path, PATH_SEPARATOR);
+	component = strtok(path, separator);
 	while (component) {
 		p4tcpath[i++] = component;
-		component = strtok(NULL, PATH_SEPARATOR);
+		component = strtok(NULL, separator);
 	}
 }
 
@@ -1573,7 +1571,7 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 		return -1;
 	}
 
-	parse_path(*argv, p4tcpath);
+	parse_path(*argv, p4tcpath, "/");
 	if (!p4tcpath[PATH_OBJ_IDX]) {
 		fprintf(stderr, "Invalid path %s\n", *argv);
 		return -1;

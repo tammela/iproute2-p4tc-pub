@@ -44,7 +44,7 @@ struct p4_param_s {
 	__u8 endbit;
 };
 
-void parse_path(char *path, char **p4tcpath);
+void parse_path(char *path, char **p4tcpath, const char *separator);
 int get_obj_type(const char *str_obj_type);
 struct p4_metat_s *get_meta_byname(const char *pname, const char *name);
 struct p4_metat_s *get_meta_byid(const __u32 pipeid, const __u32 id);
