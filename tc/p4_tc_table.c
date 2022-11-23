@@ -351,7 +351,7 @@ static inline int copy_to_key(__u8 *key, __u8 *mask, const __u8 *valkey,
 #define do_ipv4_mask(addr, sz) (htonl(~0u << ((sz) - addr.bitlen)))
 
 static int __parse_table_keys(struct parse_state *state, __u32 *offset,
-			      const char *argv,
+			      const char *argv, __u32 bitsz,
 			      struct p4_type_s *type)
 {
 	struct mask_ops *mask_op = &masks_ops[type->containid];
@@ -388,6 +388,7 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 
 		val.value = value;
 		val.mask = mask;
+		val.bitsz = bitsz ? bitsz : type->bitsz;
 		if (type->parse_p4t(&val, argv, 10) < 0) {
 			free(value);
 			free(mask);
@@ -428,7 +429,7 @@ static int parse_table_field(int *argc_p, char ***argv_p,
 	 * you hit enter):
 	 * tc p4 create ptables/table/mysrc ip/dstAddr ipv4 192.168.0.0/16
 	 */
-	if (__parse_table_keys(state, offset, *argv, type) < 0)
+	if (__parse_table_keys(state, offset, *argv, bitsz, type) < 0)
 		return -1;
 
 	*argv_p = argv;
@@ -465,7 +466,7 @@ static int parse_table_keys(int *argc_p, char ***argv_p,
 		if (key) {
 			NEXT_ARG();
 			if (__parse_table_keys(state, offset, *argv,
-					       key->type) < 0) {
+					       0, key->type) < 0) {
 				ret = -1;
 				goto out;
 			}
@@ -650,7 +651,7 @@ static int tc_table_cmd(int cmd, unsigned int flags, int *argc_p,
 	if (!argc)
 		return -1;
 
-	parse_path(*argv, p4tcpath);
+	parse_path(*argv, p4tcpath, "/");
 	if (!p4tcpath[PATH_TABLE_OBJ_IDX])
 		return -1;
 
