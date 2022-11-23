@@ -17,6 +17,13 @@ static int parse_p4t_u8_val(struct p4_type_value *val, const char *arg, int base
 	if (get_u8(&ival, arg, base))
 		return -1;
 
+	if (val->bitsz < 8) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
+
 	*newval = ival;
 	return 0;
 }
@@ -28,6 +35,13 @@ static int parse_p4t_s8_val(struct p4_type_value *val, const char *arg, int base
 
 	if (get_s8(&ival, arg, base))
 		return -1;
+
+	if (val->bitsz < 8) {
+		if ((__u8)ival > (1 << (val->bitsz)) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
 
 	*newval = ival;
 	return 0;
@@ -42,6 +56,13 @@ static int parse_p4t_u16_val(struct p4_type_value *val, const char *arg,
 	if (get_u16(&ival, arg, base))
 		return -1;
 
+	if (val->bitsz < 16) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
+
 	*newval = ival;
 	return 0;
 }
@@ -54,6 +75,13 @@ static int parse_p4t_s16_val(struct p4_type_value *val, const char *arg,
 
 	if (get_s16(&ival, arg, base))
 		return -1;
+
+	if (val->bitsz < 16) {
+		if ((__u16)ival > (1 << (val->bitsz)) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
 
 	*newval = ival;
 	return 0;
@@ -68,6 +96,13 @@ static int parse_p4t_be16_val(struct p4_type_value *val, const char *arg,
 	if (get_be16(&ival, arg, base))
 		return -1;
 
+	if (val->bitsz < 16) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
+
 	*newval = htons(ival);
 	return 0;
 }
@@ -80,6 +115,13 @@ static int parse_p4t_s32_val(struct p4_type_value *val, const char *arg,
 
 	if (get_s32(&ival, arg, base))
 		return -1;
+
+	if (val->bitsz < 32) {
+		if ((__u32)ival > (1 << (val->bitsz)) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
 
 	*newval = ival;
 	return 0;
@@ -94,6 +136,13 @@ static int parse_p4t_u64_val(struct p4_type_value *val, const char *arg,
 	if (get_u64(&ival, arg, base))
 		return -1;
 
+	if (val->bitsz < 64) {
+		if (ival > (1ULL << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
+
 	*newval = ival;
 	return 0;
 }
@@ -106,6 +155,13 @@ static int parse_p4t_u32_val(struct p4_type_value *val, const char *arg,
 
 	if (get_u32(&ival, arg, base))
 		return -1;
+
+	if (val->bitsz < 32) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
 
 	*newval = ival;
 	return 0;
@@ -136,6 +192,13 @@ static int parse_p4t_be32_val(struct p4_type_value *val, const char *arg,
 
 	if (get_be32(&ival, arg, base))
 		return -1;
+
+	if (val->bitsz < 32) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
 
 	*newval = htonl(ival);
 	return 0;
@@ -192,56 +255,84 @@ static void print_p4t_u8_val(const char *name, struct p4_type_value *val,
 			     FILE *f)
 {
 	__u8 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_u16_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
 	__u16 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_be16_val(const char *name, struct p4_type_value *val,
 			       FILE *f)
 {
 	__be16 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_u32_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
 	__u32 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_bool_val(const char *name, struct p4_type_value *val,
 			       FILE *f)
 {
 	bool *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_bool(PRINT_ANY, "value", "value %s", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %s", SPRINT_BSIZE);
+
+	print_string(PRINT_ANY, name, buf, *ival ? "true" : "false");
 }
 
 static void print_p4t_s32_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
 	__s32 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_int(PRINT_ANY, "value", "value %d", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %d", SPRINT_BSIZE);
+
+	print_int(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_be32_val(const char *name, struct p4_type_value *val,
 			       FILE *f)
 {
 	__be32 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", ntohl(*ival));
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, ntohl(*ival));
 }
 
 
@@ -249,16 +340,24 @@ static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
 	__u64 *ival = val->value;
+	SPRINT_BUF(buf);
 
-	print_uint(PRINT_ANY, "value", "value %u", *ival);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, *ival);
 }
 
 static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
 	const char *ifname = val->value;
+	SPRINT_BUF(buf);
 
-	print_string(PRINT_ANY, "value", "value %s", ifname);
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %s", SPRINT_BSIZE);
+
+	print_string(PRINT_ANY, name, buf, ifname);
 }
 
 static void print_p4t_mac_val(const char *name, struct p4_type_value *val,
@@ -266,9 +365,13 @@ static void print_p4t_mac_val(const char *name, struct p4_type_value *val,
 {
 	unsigned char *mac_val = val->value;
 	SPRINT_BUF(b1);
+	SPRINT_BUF(buf);
+
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %s", SPRINT_BSIZE);
 
 	ll_addr_n2a(mac_val, ETH_ALEN, 0, b1, sizeof(b1));
-	print_string(PRINT_ANY, "value", "value %s", b1);
+	print_string(PRINT_ANY, name, buf, b1);
 }
 
 static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
@@ -278,7 +381,11 @@ static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
 	SPRINT_BUF(buf1);
 	SPRINT_BUF(buf2);
 	__be32 mask_val;
+	SPRINT_BUF(buf);
 	int len;
+
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %s", SPRINT_BSIZE);
 
 	mask_val = htonl((*(__be32 *)val->mask));
 	len = ffs(mask_val);
@@ -287,7 +394,7 @@ static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
 		 format_host_r(AF_INET, 4, addr, buf1, sizeof(buf1)),
 		 len);
 
-	print_string(PRINT_ANY, "value", "value %s", buf2);
+	print_string(PRINT_ANY, name, buf, buf2);
 }
 
 struct p4_type_s *get_p4type_byid(int id)

@@ -30,6 +30,7 @@ enum {
 struct p4_type_value {
 	void *value;
 	void *mask;
+	__u32 bitsz;
 };
 
 #define P4T_MAX_STR_SZ 16
