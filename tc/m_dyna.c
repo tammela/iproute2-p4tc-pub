@@ -59,6 +59,7 @@ struct param {
 	char name[ACTPARAMNAMSIZ];
 	__u32 id;
 	__u32 type;
+	__u32 bitsz;
 };
 
 static int dyna_add_param(struct param *param, const char *value, bool in_act,
@@ -96,6 +97,7 @@ static int dyna_add_param(struct param *param, const char *value, bool in_act,
 
 		val.value = new_value;
 		val.mask = new_mask;
+		val.bitsz = param->bitsz;
 		if (t->parse_p4t &&
 		    t->parse_p4t(&val, value, 0) < 0) {
 			ret = -1;
@@ -145,10 +147,9 @@ static int dyna_parse_param(int *argc_p, char ***argv_p, bool in_act,
 	while (argc > 0) {
 		if (strcmp(*argv, "type") == 0) {
 			struct p4_type_s *t;
-			__u32 bitsz;
 
 			NEXT_ARG();
-			t = get_p4type_byarg(*argv, &bitsz);
+			t = get_p4type_byarg(*argv, &param.bitsz);
 			if (!t) {
 				fprintf(stderr, "Invalid type %s\n", *argv);
 				return -1;
@@ -340,7 +341,7 @@ static int print_dyna_parm(FILE *f, struct rtattr *arg)
 		val.value = value;
 		val.mask = mask;
 		if (t->print_p4t)
-			t->print_p4t(t->name, &val, f);
+			t->print_p4t("value", &val, f);
 	}
 
 	if (tb[P4TC_ACT_PARAMS_ID]) {
