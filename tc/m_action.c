@@ -272,10 +272,12 @@ restart_s:
 		goto noexist;
 
 reg:
-	if (looked4dyna)
+	if (looked4dyna) {
 		strcpy(a->id, str);
-	a->next = action_list;
-	action_list = a;
+	} else {
+		a->next = action_list;
+		action_list = a;
+	}
 	return a;
 
 noexist:
