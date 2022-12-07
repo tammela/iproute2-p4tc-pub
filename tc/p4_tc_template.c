@@ -529,6 +529,69 @@ static int print_p4_key(struct rtattr *tb, void *arg)
 	return 0;
 }
 
+int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
+			   FILE *f)
+{
+	char permissions[11] = {0};
+	int i_str;
+	int i;
+
+	for (i = 0; i < P4TC_CONTROL_PERMISSIONS_C_BIT + 1; i++) {
+		if (i >= P4TC_CONTROL_PERMISSIONS_X_BIT)
+			i_str = P4TC_CONTROL_PERMISSIONS_C_BIT - i;
+		else
+			i_str = -1 * (i - P4TC_CONTROL_PERMISSIONS_C_BIT);
+
+		switch (i) {
+		case P4TC_DATA_PERMISSIONS_C_BIT:
+		case P4TC_CONTROL_PERMISSIONS_C_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'C';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERMISSIONS_R_BIT:
+		case P4TC_CONTROL_PERMISSIONS_R_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'R';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERMISSIONS_U_BIT:
+		case P4TC_CONTROL_PERMISSIONS_U_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'U';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERMISSIONS_D_BIT:
+		case P4TC_CONTROL_PERMISSIONS_D_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'D';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		case P4TC_DATA_PERMISSIONS_X_BIT:
+		case P4TC_CONTROL_PERMISSIONS_X_BIT: {
+			if (*passed_permissions & (1 << i))
+				permissions[i_str] = 'X';
+			else
+				permissions[i_str] = '-';
+			break;
+		}
+		}
+	}
+
+	print_string(PRINT_FP, NULL, "%s", prefix);
+	print_string(PRINT_ANY, "permissions", "permissions %s\n", permissions);
+
+	return 0;
+}
+
 static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
 {
 	struct rtattr *tb[P4TC_TABLE_DEFAULT_MAX + 1];
@@ -538,64 +601,10 @@ static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
 	tc_print_action(f, tb[P4TC_TABLE_DEFAULT_ACTION], 1);
 
 	if (tb[P4TC_TABLE_DEFAULT_PERMISSIONS]) {
-		char permissions[11] = {0};
-		__u16 *passed_permissions;
-		int i_str;
-		int i;
+		__u16 *permissions;
 
-		passed_permissions = RTA_DATA(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
-		for (i = 0; i < P4TC_CONTROL_PERMISSIONS_C_BIT + 1; i++) {
-			if (i >= P4TC_CONTROL_PERMISSIONS_X_BIT)
-				i_str = P4TC_CONTROL_PERMISSIONS_C_BIT - i;
-			else
-				i_str = -1 * (i - P4TC_CONTROL_PERMISSIONS_C_BIT);
-
-			switch (i) {
-			case P4TC_DATA_PERMISSIONS_C_BIT:
-			case P4TC_CONTROL_PERMISSIONS_C_BIT: {
-				if (*passed_permissions & (1 << i))
-				    permissions[i_str] = 'C';
-				else
-				    permissions[i_str] = '-';
-				break;
-			}
-			case P4TC_DATA_PERMISSIONS_R_BIT:
-			case P4TC_CONTROL_PERMISSIONS_R_BIT: {
-				if (*passed_permissions & (1 << i))
-				    permissions[i_str] = 'R';
-				else
-				    permissions[i_str] = '-';
-				break;
-			}
-			case P4TC_DATA_PERMISSIONS_U_BIT:
-			case P4TC_CONTROL_PERMISSIONS_U_BIT: {
-				if (*passed_permissions & (1 << i))
-				    permissions[i_str] = 'U';
-				else
-				    permissions[i_str] = '-';
-				break;
-			}
-			case P4TC_DATA_PERMISSIONS_D_BIT:
-			case P4TC_CONTROL_PERMISSIONS_D_BIT: {
-				if (*passed_permissions & (1 << i))
-				    permissions[i_str] = 'D';
-				else
-				    permissions[i_str] = '-';
-				break;
-			}
-			case P4TC_DATA_PERMISSIONS_X_BIT:
-			case P4TC_CONTROL_PERMISSIONS_X_BIT: {
-				if (*passed_permissions & (1 << i))
-				    permissions[i_str] = 'X';
-				else
-				    permissions[i_str] = '-';
-				break;
-			}
-			}
-		}
-
-		print_string(PRINT_ANY, "permissions",
-			     "    permissions: %s\n", permissions);
+		permissions = RTA_DATA(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
+		p4tc_print_permissions("", permissions, f);
 	}
 
 	return 0;
@@ -632,6 +641,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			   parm->tbl_default_key);
 		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
 			   parm->tbl_num_entries);
+		p4tc_print_permissions("    ", &parm->tbl_permissions, f);
 
 		print_nl();
 	}
@@ -1661,13 +1671,27 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	__u32 tbl_id = 0;
 	__u32 pipeid = 0;
 	int ret = 0;
-	char *cbname, *tblname;
+	char *pname, *cbname, *tblname;
 	bool is_default;
 
+	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
 	tblname = p4tcpath[PATH_TBLNAME_IDX];
-	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
-	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	if (cmd != RTM_GETP4TEMPLATE) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     TABLENAMSIZ);
+		if (ret < 0) {
+			fprintf(stderr, "table name too long\n");
+			return -1;
+		}
+	}
+
 	while (argc > 0) {
 		is_default = false;
 		if (cmd == RTM_NEWP4TEMPLATE) {
@@ -1760,6 +1784,11 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 							       P4TC_TABLE_DEFAULT_MISS))
 					return -1;
 				continue;
+			} else if (strcmp(*argv, "permissions") == 0) {
+				NEXT_ARG();
+				if (get_u16(&table.tbl_permissions, *argv, 16) < 0)
+					return -1;
+				table.tbl_flags |= P4TC_TABLE_FLAGS_PERMISSIONS;
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
@@ -1804,32 +1833,30 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		argc--;
 	}
 
+
+	if (!cbname && !tblname && !tbl_id) {
+		*flags |= NLM_F_ROOT;
+	} else if (cmd == RTM_GETP4TEMPLATE) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
 	if (cmd == RTM_NEWP4TEMPLATE && table.tbl_flags)
 		addattr_l(n, MAX_MSG, P4TC_TABLE_INFO, &table,
 			  sizeof(table));
 
 	ret = 0;
-	if (cbname && tblname) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     TABLENAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table name too long\n");
-			return -1;
-		}
-	}
-
 	if (!STR_IS_EMPTY(full_tblname))
 		addattrstrz(n, MAX_MSG, P4TC_TABLE_NAME, full_tblname);
 
-	addattr_nest_end(n, tail);
-
-	if (!cbname && !tblname && !tbl_id)
-		*flags |= NLM_F_ROOT;
+	if (tail)
+		addattr_nest_end(n, tail);
 
 	if (tbl_id)
 		addattr32(n, MAX_MSG, P4TC_PATH, tbl_id);
 
-	addattr_nest_end(n, count);
+	if (count)
+		addattr_nest_end(n, count);
 
 out:
 	*argc_p = argc;
