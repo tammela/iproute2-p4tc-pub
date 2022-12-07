@@ -690,6 +690,22 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 		close_json_object();
 	}
 
+	if (tb[P4TC_TABLE_OPT_ENTRY]) {
+		struct rtattr *tb_nest[P4TC_MAX + 1];
+
+		parse_rtattr_nested(tb_nest, P4TC_MAX,
+				    tb[P4TC_TABLE_OPT_ENTRY]);
+		if (tb_nest[P4TC_PARAMS]) {
+			print_string(PRINT_FP, NULL, "    entry:\n",
+				     NULL);
+			open_json_object("entry");
+			print_nl();
+			print_table_entry(n, tb_nest[P4TC_PARAMS], f,
+					  "        ", tbl_id);
+			close_json_object();
+		}
+	}
+
 	print_nl();
 
 	return 0;
@@ -1789,6 +1805,30 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				if (get_u16(&table.tbl_permissions, *argv, 16) < 0)
 					return -1;
 				table.tbl_flags |= P4TC_TABLE_FLAGS_PERMISSIONS;
+			} else if (strcmp(*argv, "entry") == 0) {
+				struct parse_state state = {0};
+				__u32 offset = 0;
+				struct rtattr *entries;
+				__u32 tmp_ids[2];
+
+				entries = addattr_nest(n, MAX_MSG,
+						       P4TC_TABLE_OPT_ENTRY | NLA_F_NESTED);
+
+				NEXT_ARG();
+				ret = parse_new_table_entry(&argc, &argv, n,
+							    &state, p4tcpath,
+							    pname, tmp_ids,
+							    &offset);
+				if (ret < 0)
+					return -1;
+
+				if (state.has_parsed_keys) {
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB,
+						  state.keyblob, offset);
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB,
+						  state.maskblob, offset);
+				}
+				addattr_nest_end(n, entries);
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
