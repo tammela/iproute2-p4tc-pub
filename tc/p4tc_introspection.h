@@ -14,20 +14,8 @@
 
 #define ENV_VAR "INTROSPECTION"
 
-#define TABLEKEYNAMSIZ TEMPLATENAMSZ
-
-struct parse_state;
-
 struct mask_ops { int (*parse)(struct parse_state *state, __u32 *offset,
 		     const char *argv);
-};
-
-struct tkey {
-	char name[TABLEKEYNAMSIZ];
-	__u8 value[P4TC_MAX_KEYSZ];
-	__u8 mask[P4TC_MAX_KEYSZ];
-	struct p4_type_s *type;
-	__u32 key_id;
 };
 
 int str_to_type(const char *type_str);

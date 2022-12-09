@@ -35,14 +35,6 @@
 #include "p4tc_introspection.h"
 #include "p4_types.h"
 
-struct parse_state {
-	struct tkey keys[P4TC_MAXPARSE_KEYS];
-	bool has_parsed_keys;
-	int num_keys;
-	__u8 keyblob[P4TC_MAX_KEYSZ];
-	__u8 maskblob[P4TC_MAX_KEYSZ];
-};
-
 static void parse_common(__u8 *keyblob, __u8 *maskblob,
 			 struct p4_type_value *val, __u32 *offset, size_t sz)
 {
@@ -77,38 +69,47 @@ struct mask_ops masks_ops[P4T_MAX] = {
 	},
 };
 
-static void print_entry_tm(FILE *f, const struct p4tc_table_entry_tm *tm)
+static void print_entry_tm(const char *prefix, FILE *f,
+			   const struct p4tc_table_entry_tm *tm)
 {
 	int hz = get_user_hz();
 
-	if (tm->created != 0)
+	if (tm->created != 0) {
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_uint(PRINT_ANY, "created", " created %u sec",
 			   tm->created / hz);
+	}
 
-	if (tm->lastused != 0)
+	if (tm->lastused != 0) {
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_uint(PRINT_ANY, "last_used", " used %u sec",
 			   tm->lastused / hz);
+	}
 
-	if (tm->firstused != 0)
+	if (tm->firstused != 0) {
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_uint(PRINT_ANY, "first_used", " firstused %u sec",
 			   tm->firstused / hz);
+	}
 	print_nl();
 }
 
-static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
-			     __u32 tbl_id)
+int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
+		      const char *prefix, __u32 tbl_id)
 {
 	struct rtattr *tb[P4TC_ENTRY_MAX + 1];
 	unsigned int len;
 
 	parse_rtattr_nested(tb, P4TC_ENTRY_MAX, arg);
 
+	print_string(PRINT_FP, NULL, "%s", prefix);
 	print_uint(PRINT_ANY, "tblid", "table id %u\n", tbl_id);
 	print_nl();
 
 	if (tb[P4TC_ENTRY_PRIO]) {
 		__u32 *prio = RTA_DATA(tb[P4TC_ENTRY_PRIO]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_uint(PRINT_ANY, "prio", "entry priority %u\n", *prio);
 	}
 
@@ -128,7 +129,9 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		const __u8 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
 		const __u8 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key", "key blob %02x\n", *keyblob);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask", "mask blob %02x\n", *maskblob);
 		break;
 	}
@@ -136,7 +139,9 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		const __u16 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
 		const __u16 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key", "key blob %04x\n", *keyblob);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask", "mask blob %04x\n", *maskblob);
 		break;
 	}
@@ -144,7 +149,9 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		const __u32 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
 		const __u32 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key", "key blob %08x\n", *keyblob);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask", "mask blob %08x\n", *maskblob);
 		break;
 	}
@@ -152,7 +159,9 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		const __u64 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
 		const __u64 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key", "key blob %16llx\n", *keyblob);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask", "mask blob %16llx\n", *maskblob);
 		break;
 	}
@@ -166,15 +175,19 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		const __u64 *maskblob1 = ((__u64 *)maskblob);
 		const __u64 *maskblob2 = ((__u64 *)&maskblob[8]);
 
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key1", "key blob1 %16x\n", *keyblob1);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "key2", "key blob2 %16x\n", *keyblob2);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask1", "mask blob1 %16x\n", *maskblob1);
+		print_string(PRINT_FP, NULL, "%s", prefix);
 		print_0xhex(PRINT_ANY, "mask2", "mask blob2 %16x\n", *maskblob2);
 	}
 
 	if (tb[P4TC_ENTRY_ACT]) {
 		print_string(PRINT_FP, NULL,
-			     "    entry actions:", NULL);
+			     "%s    entry actions:", prefix);
 		open_json_object("actions");
 		print_nl();
 		tc_print_action(f, tb[P4TC_ENTRY_ACT], 0);
@@ -189,7 +202,9 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		if (p4tc_ctrltable_getbyid(*whodunnit, name) < 0)
 			return -1;
 
-		print_string(PRINT_ANY, "create_whodunnit", "create whodunnit %s\n", name);
+		print_string(PRINT_FP, NULL, "%s", prefix);
+		print_string(PRINT_ANY, "create_whodunnit", "create whodunnit %s\n",
+			     name);
 	}
 
 	if (tb[P4TC_ENTRY_UPDATE_WHODUNNIT]) {
@@ -199,14 +214,23 @@ static int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		if (p4tc_ctrltable_getbyid(*whodunnit, name) < 0)
 			return -1;
 
-		print_string(PRINT_ANY, "update_whodunnit", "update whodunnit %s\n", name);
+		print_string(PRINT_FP, NULL, "%s", prefix);
+		print_string(PRINT_ANY, "update_whodunnit", "update whodunnit %s\n",
+			     name);
+	}
+
+	if (tb[P4TC_ENTRY_PERMISSIONS]) {
+		__u16 *permissions;
+
+		permissions = RTA_DATA(tb[P4TC_ENTRY_PERMISSIONS]);
+		p4tc_print_permissions(prefix, permissions, f);
 	}
 
 	if (tb[P4TC_ENTRY_TM]) {
 		struct p4tc_table_entry_tm *tm;
 
 		tm = RTA_DATA(tb[P4TC_ENTRY_TM]);
-		print_entry_tm(f, tm);
+		print_entry_tm(prefix, f, tm);
 	}
 
 	print_nl();
@@ -241,7 +265,8 @@ static int print_table_1(struct nlmsghdr *n, struct rtattr *arg,
 	if (cmd == RTM_DELP4TBENT && (n->nlmsg_flags & NLM_F_ROOT))
 		print_table_entry_flush(n, tb[P4TC_COUNT], f);
 	else
-		print_table_entry(n, tb[P4TC_PARAMS], f, tbl_id ? *tbl_id : 0);
+		print_table_entry(n, tb[P4TC_PARAMS], f, "",
+				  tbl_id ? *tbl_id : 0);
 
 	return 0;
 }
@@ -439,9 +464,8 @@ static int parse_table_field(int *argc_p, char ***argv_p,
 }
 
 static int parse_table_keys(int *argc_p, char ***argv_p,
-			    struct parse_state *state,
-			    __u32 *offset, char **p4tcpath,
-			    __u32 tbl_id)
+			    struct parse_state *state, __u32 *offset,
+			    char **p4tcpath, const char *pname, __u32 tbl_id)
 {
 	const char *cbname = p4tcpath[PATH_CBNAME_IDX];
 	const char *tblname = p4tcpath[PATH_TBLNAME_IDX];
@@ -453,8 +477,7 @@ static int parse_table_keys(int *argc_p, char ***argv_p,
 	if (!state->has_parsed_keys) {
 		ret = concat_cb_name(full_tblname, cbname, tblname,
 				     TABLENAMSIZ);
-		state->num_keys = p4tc_get_table_keys(state->keys,
-						      p4tcpath[PATH_TABLE_PNAME_IDX],
+		state->num_keys = p4tc_get_table_keys(state->keys, pname,
 						      full_tblname, tbl_id);
 	}
 
@@ -489,9 +512,79 @@ out:
 	return ret;
 }
 
-static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
-			    char *p4tcpath[], struct nlmsghdr *n,
-			    unsigned int *flags)
+int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			  struct parse_state *state, char *p4tcpath[],
+			  const char *pname, __u32 *ids, __u32 *offset)
+{
+	__u32 pipeid = 0, tbl_id = 0, prio = 0;
+	int ret, parsed_keys = 0;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	__u32 permissions;
+
+	while (argc > 0) {
+		if (strcmp(*argv, "pipeid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&pipeid, *argv, 10) < 0) {
+				ret = -1;
+				goto out;
+			}
+		} else if (strcmp(*argv, "tblid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&tbl_id, *argv, 10) < 0) {
+				ret = -1;
+				goto out;
+			}
+		} else if (strcmp(*argv, "prio") == 0) {
+			__u32 prio;
+
+			NEXT_ARG();
+			if (get_u32(&prio, *argv, 10)) {
+				fprintf(stderr, "Invalid prio\n");
+				ret = -1;
+				goto out;
+			}
+			addattr32(n, MAX_MSG, P4TC_ENTRY_PRIO, prio);
+		} else if (strcmp(*argv, "action") == 0) {
+			if (parse_action(&argc, &argv, P4TC_ENTRY_ACT | NLA_F_NESTED, n)) {
+				fprintf(stderr, "Illegal action\"\n");
+				ret = -1;
+				goto out;
+			}
+		} else if (strcmp(*argv, "permissions") == 0) {
+			NEXT_ARG();
+			if (get_u16((__u16*)&permissions, *argv, 16) < 0) {
+				ret = -1;
+				goto out;
+			}
+
+			addattr16(n, MAX_MSG, P4TC_ENTRY_PERMISSIONS,
+				  (__u16)permissions);
+		} else {
+			ret = parse_table_keys(&argc, &argv, state,
+					       offset, p4tcpath, pname, tbl_id);
+			if (ret < 0)
+				goto out;
+			parsed_keys++;
+		}
+
+		argv++;
+		argc--;
+	}
+
+	addattr8(n, MAX_MSG, P4TC_ENTRY_WHODUNNIT, P4TC_ENTITY_TC);
+out:
+	ids[0] = tbl_id;
+	ids[1] = prio;
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
+}
+
+static int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
+				  char *p4tcpath[], struct nlmsghdr *n,
+				  unsigned int *flags)
 {
 	__u32 pipeid = 0, prio = 0, tbl_id = 0;
 	char full_tblname[TABLENAMSIZ] = {0};
@@ -503,50 +596,28 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 	int parsed_keys = 0;
 	__u32 offset = 0;
 	int ret = 0;
-	char *cbname, *tblname;
+	char *pname, *cbname, *tblname;
+	__u32 ids[2];
 
+	pname = p4tcpath[PATH_TABLE_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
 	tblname = p4tcpath[PATH_TBLNAME_IDX];
 
+	if (cmd == RTM_CREATEP4TBENT) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		parm = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
 	while (argc > 0) {
 		if (cmd == RTM_CREATEP4TBENT) {
-			if (strcmp(*argv, "pipeid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&pipeid, *argv, 10) < 0) {
-					ret = -1;
-					goto out;
-				}
-			} else if (strcmp(*argv, "tblid") == 0) {
-				NEXT_ARG();
-				if (get_u32(&tbl_id, *argv, 10) < 0) {
-					ret = -1;
-					goto out;
-				}
-			} else if (strcmp(*argv, "prio") == 0) {
-				NEXT_ARG();
-				if (get_u32(&prio, *argv, 10)) {
-					fprintf(stderr, "Invalid prio\n");
-					ret = -1;
-					goto out;
-				}
-			} else if (strcmp(*argv, "action") == 0) {
-				if (!count)
-					count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
-				if (!parm)
-					parm = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+			pipeid = parse_new_table_entry(&argc, &argv, n, &state,
+						       p4tcpath, pname, ids,
+						       &offset);
+			if (pipeid < 0)
+				return pipeid;
 
-				if (parse_action(&argc, &argv, P4TC_ENTRY_ACT | NLA_F_NESTED, n)) {
-					fprintf(stderr, "Illegal action\"\n");
-					ret = -1;
-					goto out;
-				}
-			} else {
-				ret = parse_table_keys(&argc, &argv, &state,
-						       &offset, p4tcpath, tbl_id);
-				if (ret < 0)
-					goto out;
-				parsed_keys++;
-			}
+			tbl_id = ids[0];
+			prio = ids[1];
 		} else {
 			if (strcmp(*argv, "pipeid") == 0) {
 				NEXT_ARG();
@@ -561,15 +632,26 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 					goto out;
 				}
 			} else if (strcmp(*argv, "prio") == 0) {
+				__u32 prio;
+
+				if (!count)
+					count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+				if (!parm)
+					parm = addattr_nest(n, MAX_MSG,
+							    P4TC_PARAMS | NLA_F_NESTED);
+
 				NEXT_ARG();
 				if (get_u32(&prio, *argv, 10)) {
 					fprintf(stderr, "Invalid prio\n");
 					ret = -1;
 					goto out;
 				}
+
+				addattr32(n, MAX_MSG, P4TC_ENTRY_PRIO, prio);
 			} else {
 				ret = parse_table_keys(&argc, &argv, &state,
-						       &offset, p4tcpath, tbl_id);
+						       &offset, p4tcpath, pname,
+						       tbl_id);
 				if (ret < 0)
 					goto out;
 				parsed_keys++;
@@ -579,7 +661,7 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 		argc--;
 	}
 
-	if (!prio && !parsed_keys)
+	if (!prio && !(state.has_parsed_keys))
 		*flags = NLM_F_ROOT;
 	if (!((*flags & NLM_F_ROOT) && cmd == RTM_GETP4TBENT) && !count)
 		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
@@ -600,15 +682,10 @@ static int parse_table_data(int cmd, int *argc_p, char ***argv_p,
 	if (!STR_IS_EMPTY(full_tblname))
 		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
 
-	if (parsed_keys) {
+	if (state.has_parsed_keys) {
 		addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB, state.keyblob, offset);
 		addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB, state.maskblob, offset);
 	}
-
-	addattr8(n, MAX_MSG, P4TC_ENTRY_WHODUNNIT, P4TC_ENTITY_TC);
-
-	if (prio)
-		addattr32(n, MAX_MSG, P4TC_ENTRY_PRIO, prio);
 
 	if (parm)
 		addattr_nest_end(n, parm);
@@ -669,7 +746,8 @@ static int tc_table_cmd(int cmd, unsigned int flags, int *argc_p,
 
 	root = addattr_nest(&req.n, MAX_MSG, P4TC_ROOT | NLA_F_NESTED);
 
-	ret = parse_table_data(cmd, &argc, &argv, p4tcpath, &req.n, &flags);
+	ret = parse_table_entry_data(cmd, &argc, &argv, p4tcpath, &req.n,
+				     &flags);
 	if (ret < 0)
 		return ret;
 	req.t.pipeid = ret;
