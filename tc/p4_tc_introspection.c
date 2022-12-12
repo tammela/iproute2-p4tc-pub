@@ -103,86 +103,7 @@ static int p4tc_find_obj(FILE *f, const char *obj_name, __u32 *pipeid,
 
 #define find_table(f, obj_name, pipeid, objid) (p4tc_find_obj(f, obj_name, pipeid, objid, "table "))
 
-#define p4tc_find_header(f, obj_name, pipeid, objid) (p4tc_find_obj(f, obj_name, pipeid, &objid, "header "))
-
 #define p4tc_find_act(f, obj_name, pipeid, objid) (p4tc_find_obj(f, obj_name, pipeid, objid, "action "))
-
-int p4tc_get_header_fields(struct hdrfield fields[], const char *pname,
-			   const char *hdrname, __u32 *pipeid)
-{
-	int i = 0;
-	__u16 hdr_offset = 0;
-	char *line = NULL;
-	char field_name[TEMPLATENAMSZ];
-	__u32 tbcid;
-	char type_str[32];
-	char path[PATH_MAX];
-	char field_str[6];
-	size_t len;
-	FILE *f;
-	int ret;
-
-	if (!pname) {
-		fprintf(stderr, "Must specify pipeline name for introspection");
-		return -1;
-	}
-
-	if (concat_pipeline_path(path, pname) < 0)
-		return -1;
-
-	f = fopen(path, "r");
-	if (f == NULL) {
-		fprintf(stderr, "Unable to open introspection file\n");
-		return -1;
-	}
-
-	if (p4tc_find_header(f, hdrname, pipeid, tbcid) < 0) {
-		fprintf(stderr, "Unable to find header %s in introspection file\n",
-			hdrname);
-		ret = -1;
-		goto out;
-	}
-
-	while (getline(&line, &len, f) != -1) {
-		__u32 bitsz = 0;
-		struct p4_type_s *p4_type;
-		__u32 parserid;
-		int scanned;
-		__u32 id;
-
-		scanned = sscanf(line, "%s %s %s %u %u[^\n]", field_str,
-				 field_name, type_str, &id, &parserid);
-
-		if (scanned != 5)
-			break;
-		if (strcmp(field_str, "field") != 0)
-			continue;
-
-		p4_type = get_p4type_byarg(type_str, &bitsz);
-		if (!p4_type) {
-			fprintf(stderr, "Invalid P4 type %s\n", type_str);
-			ret = -1;
-			goto out;
-		}
-
-		fields[i].id = id;
-		fields[i].parserid = parserid;
-		fields[i].ty = p4_type;
-
-		fields[i].startbit = hdr_offset;
-		fields[i].endbit = fields[i].startbit + bitsz - 1;
-		strcpy(fields[i].name, field_name);
-
-		hdr_offset += bitsz;
-		i++;
-	}
-	ret = i;
-
-out:
-	fclose(f);
-	return ret;
-
-}
 
 static int p4tc_get_pipeline_metadata(struct p4_metat_s metadata[],
 				      const char *pname, int *i)
@@ -450,20 +371,6 @@ int p4tc_get_regs(struct p4_reg_s regs[])
 	}
 
 	return i;
-}
-
-struct hdrfield *p4tc_find_hdrfield(struct hdrfield fields[],
-				    const char *fieldname,
-				    __u32 num_fields)
-{
-	int i;
-
-	for (i = 0; i < num_fields; i++) {
-		if (strncmp(fields[i].name, fieldname, TEMPLATENAMSZ) == 0)
-			return &fields[i];
-	}
-
-	return NULL;
 }
 
 int p4tc_get_tables(const char *pname, const char *tname, __u32 *pipeid,
