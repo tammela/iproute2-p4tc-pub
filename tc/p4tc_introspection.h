@@ -24,12 +24,6 @@ struct tkey *p4tc_find_table_key(struct tkey keys[], const char *key_name,
 int p4tc_get_table_keys(struct tkey keys[], const char *pname,
 			const char *tname, const __u32 tbl_id);
 
-int p4tc_get_act(const char *pname, const char *act_name, __u32 *pipeid,
-		 __u32 *act_id);
-
-int p4tc_get_metadata(struct p4_metat_s metadata[]);
 int p4tc_get_tables(const char *pname, const char *tname, __u32 *pipeid,
 		    __u32 *tbcid);
-int p4tc_get_act_params(struct p4_param_s params[], const char *pname,
-			const char *act_name, __u32 *pipeid, __u32 *act_id);
 #endif
