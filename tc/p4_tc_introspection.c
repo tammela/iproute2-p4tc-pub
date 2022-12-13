@@ -195,57 +195,6 @@ out:
 	return ret;
 }
 
-int p4tc_get_pipeline_regs(struct p4_reg_s regs[], const char *pname, int *i)
-{
-	char *line = NULL;
-	int ret = 0;
-	char path[PATH_MAX];
-	size_t len;
-	FILE *f;
-
-	if (concat_pipeline_path(path, pname) < 0)
-		return -1;
-
-	f = fopen(path, "r");
-	if (f == NULL) {
-		fprintf(stderr, "Unable to open introspection file\n");
-		ret = -1;
-		goto out;
-	}
-
-	while (getline(&line, &len, f) != -1) {
-		char reg_name[REGISTERNAMSIZ];
-		struct p4_type_s *p4_type;
-		char type_str[32];
-		__u32 pipeid;
-		__u32 reg_id;
-		__u32 bitsz;
-		int scanned;
-
-		scanned = sscanf(line, "register %s %s %u %u[^\n]", reg_name,
-				 type_str, &pipeid, &reg_id);
-		if (scanned != 4)
-			break;
-
-		p4_type = get_p4type_byarg(type_str, &bitsz);
-		if (!p4_type)
-			return -1;
-
-		regs[*i].startbit = 0;
-		regs[*i].endbit = bitsz - 1;
-		regs[*i].pipeid = pipeid;
-		regs[*i].id = reg_id;
-		regs[*i].containid = p4_type->containid;
-		strlcpy(regs[*i].name, reg_name, REGISTERNAMSIZ);
-		strlcpy(regs[*i].pname, pname, PIPELINENAMSIZ);
-		(*i)++;
-	}
-
-out:
-	fclose(f);
-	return ret;
-}
-
 int p4tc_get_act_params(struct p4_param_s params[], const char *pname,
 			const char *act_name, __u32 *pipeid, __u32 *act_id)
 {
@@ -340,32 +289,6 @@ int p4tc_get_metadata(struct p4_metat_s metadata[])
 			continue;
 
 		ret = p4tc_get_pipeline_metadata(metadata, de->d_name, &i);
-		if (ret < 0)
-			return ret;
-	}
-
-	return i;
-}
-
-int p4tc_get_regs(struct p4_reg_s regs[])
-{
-	char *introspection_path = get_introspection_path();
-	struct dirent *de;
-	int ret = 0;
-	int i = 0;
-	DIR *d;
-
-	d = opendir(introspection_path);
-	if (!d) {
-		fprintf(stderr, "Unable to opendir\n");
-		return -1;
-	}
-
-	while ((de = readdir(d)) != NULL) {
-		if (*de->d_name == '.')
-			continue;
-
-		ret = p4tc_get_pipeline_regs(regs, de->d_name, &i);
 		if (ret < 0)
 			return ret;
 	}
