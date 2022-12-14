@@ -414,7 +414,7 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 		val.value = value;
 		val.mask = mask;
 		val.bitsz = bitsz ? bitsz : type->bitsz;
-		if (type->parse_p4t(&val, argv, 10) < 0) {
+		if (type->parse_p4t(&val, argv, 0) < 0) {
 			free(value);
 			free(mask);
 			return -1;

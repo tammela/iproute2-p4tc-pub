@@ -400,6 +400,9 @@ enum {
 	P4TC_CMD_OPND_UNSPEC,
 	P4TC_CMD_OPND_INFO,
 	P4TC_CMD_OPND_PATH,
+	P4TC_CMD_OPND_PATH_EXTRA,
+	P4TC_CMD_OPND_LARGE_CONSTANT,
+	P4TC_CMD_OPND_PREFIX,
 	__P4TC_CMD_OPND_MAX
 };
 #define P4TC_CMD_OPND_MAX (__P4TC_CMD_OPND_MAX - 1)
@@ -446,5 +449,7 @@ struct p4tc_u_operand {
 #define DATA_IS_SLICE (BIT(2))	 /* bitslice in a container, not intepreted
 				  * by kernel
 				  */
+#define DATA_USES_ROOT_PIPE (BIT(3))
+#define DATA_HAS_TYPE_INFO (BIT(4))
 
 #endif

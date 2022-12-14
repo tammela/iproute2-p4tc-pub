@@ -27,7 +27,6 @@
 #include "tc_common.h"
 #include "p4_types.h"
 #include "p4tc_common.h"
-#include "p4tc_introspection.h"
 #include "p4tc_cmds.h"
 #include <linux/p4tc.h>
 
@@ -37,7 +36,10 @@
 
 struct p4tc_u_internal_operand {
 	struct p4tc_u_operand op;
-	void *path;
+	char *path;
+	char *extra_path;
+	void *immedv_large;
+	char *print_prefix;
 };
 
 struct p4tc_cmds_v {
@@ -130,8 +132,8 @@ struct opnd_type_s {
         const char *name;
 	int (*get_opertype)(struct action_util *a, const char *op_components[],
 			    struct p4tc_u_internal_operand *intern_op);
-	void (*print_opertype)(struct p4tc_u_operand *oper, void *oppath,
-			       FILE *f);
+	void (*print_opertype)(struct p4tc_u_operand *oper, char **p4tcpath,
+			       void *oppath, void *prefix, FILE *f);
 };
 
 int get_metadata_type(struct action_util *a, const char *op_components[],
@@ -155,26 +157,26 @@ int get_dev_type(struct action_util *a, const char *op_components[],
 int get_register_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_internal_operand *intern_op);
 
-static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f);
-static void print_metadata_type(struct p4tc_u_operand *oper,
-				void *oppath, FILE *f);
-static void print_act_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f);
-static void print_key_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f);
-static void print_table_type(struct p4tc_u_operand *oper, void *oppath,
-			     FILE *f);
-static void print_res_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f);
-static void print_hdrfield_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f);
-static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f);
-static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
-				 FILE *f);
-static void print_register_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f);
+static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f);
+static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f);
+static void print_act_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f);
+static void print_key_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f);
+static void print_table_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			     void *oppath, void *prefix, FILE *f);
+static void print_res_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			    void *oppath, void *prefix, FILE *f);
+static void print_hdrfield_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f);
+static void print_dev_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f);
+static void print_act_param_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				 void *oppath, void *prefix, FILE *f);
+static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
@@ -190,7 +192,7 @@ static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_RES, P4T_PATH, "results", get_res_type, print_res_type },
 	{P4TC_OPER_PARAM, P4T_PATH, "param", get_act_param_type,
 	 print_act_param_type},
-	{P4TC_OPER_CONST, P4T_PATH, "dev", get_dev_type,
+	{P4TC_OPER_DEV, P4T_PATH, "dev", get_dev_type,
 	 print_dev_type},
 	{P4TC_OPER_REG, P4T_PATH, "register", get_register_type,
 	 print_register_type},
@@ -226,46 +228,36 @@ static struct opnd_type_s *get_optype_byid(int id)
 int get_act_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op)
 {
-	const char *f1 = op_components[0], *f2 = op_components[1];
+	const char *f1 = op_components[0];
 	struct p4tc_u_operand *op = &intern_op->op;
 	const char *f3 = op_components[2];
-	bool is_gact = false;
+	char *f2 = (char *)op_components[1];
+	struct action_util *au;
 	__u32 actionindex;
-	__u32 pipeid = 0, actionid = 0;
-	struct action_util *new_act;
-	char buf[256];
-	int rc;
+	int result;
 
-	if (strcmp("kernel", f1) == 0) {
-		strcpy(buf, f2);
-		rc = action_a2n(buf, NULL, false);
-		if (!rc) {
-			is_gact = true;
-			strcpy(buf, "gact");
-		}
-
-		new_act = get_action_kind(buf);
-		if (!is_gact && strcasecmp(new_act->id, "gact") == 0) {
-			fprintf(stderr, "Invalid action %s:%s\n", f2, f3);
-			return -1;
-		}
-		pipeid = 0;
-		actionid = new_act->aid;
-	} else {
-		if (p4tc_get_act(f1, f2, &pipeid, &actionid) < 0)
-		    return -1;
-	}
+	if (strcmp("kernel", f1) == 0)
+		op->oper_flags |= DATA_USES_ROOT_PIPE;
 
 	if (get_u32(&actionindex, f3, 0)) {
 		fprintf(stderr, "Invalid actionindex %s:%s\n", f2, f3);
 		return -1;
 	}
 
-	op->pipeid = pipeid;
-	op->oper_datatype = P4TC_OPER_ACTID;
-	op->immedv = actionid;
+	if (!action_a2n(f2, &result, true)) {
+		f2 = "gact";
+	}
+	au = get_action_kind(f2);
+	if (au)
+		op->immedv = au->aid;
+
+	intern_op->path = calloc(1, strnlen(f2, ACTNAMSIZ) + 1);
+	if (!intern_op->path)
+		return -1;
+
+	strlcpy(intern_op->path, f2, ACTNAMSIZ);
+
 	op->immedv2 = actionindex;
-	op->oper_cbitsize = 32;
 
 	return 0;
 }
@@ -368,16 +360,17 @@ int get_const_type(struct action_util *a, const char *op_components[],
 
 	val.bitsz = bitsz;
 	if (t->bitsz > 32) {
-		intern_op->path = calloc(1, t->bitsz >> 3);
-		if (!intern_op->path) {
+		intern_op->immedv_large = calloc(1, t->bitsz >> 3);
+		if (!intern_op->immedv_large) {
 			fprintf(stderr, "Unable to allocate path\n");
 			return -1;
 		}
-		val.value = intern_op->path;
+		val.value = intern_op->immedv_large;
 		rc = t->parse_p4t(&val, f2, 0);
 	} else {
 		val.value = &op->immedv;
 		rc = t->parse_p4t(&val, f2, 0);
+		op->oper_flags |= DATA_IS_IMMEDIATE;
 	}
 	if (rc) {
 		fprintf(stderr, "Invalid operand Value %s\n", f2);
@@ -392,11 +385,10 @@ int get_metadata_type(struct action_util *a, const char *op_components[],
 {
 	const char *f1 = op_components[1], *f2 = op_components[2];
 	struct p4tc_u_operand *op = &intern_op->op;
-	struct p4_metat_s *m = NULL;
-	struct p4_type_s *t = NULL;
 	int rc = 0, l=0, r=0;
 	bool isslice = false;
 	char *pr = NULL;
+	size_t meta_str_len;
 
 	if (!f2) {
 		fprintf(stderr, "Must specify metadata name\n");
@@ -412,34 +404,23 @@ int get_metadata_type(struct action_util *a, const char *op_components[],
 		return -1;
 	}
 
-	m = get_meta_byname(f1, pr);
-	if (!m) {
-		fprintf(stderr, "metadata %s not found\n", f2);
-		free(pr);
-		return -1;
-	}
-
-	free(pr);
-	t = get_p4type_byid(m->containid);
-	if (!t) {
-		fprintf(stderr, "metadata %s kind %s not found\n", f1,
-			m->name);
-		return -1;
-	}
-
-	op->pipeid = m->pipeid;
-	op->oper_datatype = m->containid;
-	op->immedv = m->id;
-	op->oper_cbitsize = t->bitsz;
+	if (strcmp(f1, "kernel") == 0)
+		op->oper_flags |= DATA_USES_ROOT_PIPE;
 
 	if (isslice) {
 		op->oper_startbit = l;
 		op->oper_endbit = r;
 		op->oper_flags |= DATA_IS_SLICE;
-	} else {
-		op->oper_startbit = m->startbit;
-		op->oper_endbit = m->endbit;
 	}
+
+	meta_str_len = strnlen(pr, METANAMSIZ);
+	intern_op->path = calloc(1, meta_str_len + 1);
+	if (!intern_op->path)
+		return -1;
+
+	strlcpy(intern_op->path, pr, METANAMSIZ);
+
+	free(pr);
 
 	return 0;
 }
@@ -447,19 +428,13 @@ int get_metadata_type(struct action_util *a, const char *op_components[],
 int get_table_type(struct action_util *a, const char *op_components[],
 		   struct p4tc_u_internal_operand *intern_op)
 {
-	const char *f1 = op_components[1], *f2 = op_components[2];
-	struct p4tc_u_operand *op = &intern_op->op;
-	__u32 pipeid = 0, tbcid = 0;
-	int rc = 0;
+	const char *f2 = op_components[2];
 
-	rc = p4tc_get_tables(f1, f2, &pipeid, &tbcid);
-	if (rc < 0) {
-		fprintf(stderr, "Unable to find table %s.%s\n", f1, f2);
+	intern_op->path = calloc(1, strnlen(f2, TABLENAMSIZ) + 1);
+	if (!intern_op->path)
 		return -1;
-	}
 
-	op->pipeid = pipeid;
-	op->immedv = tbcid;
+	strlcpy(intern_op->path, f2, TABLENAMSIZ);
 
 	return 0;
 }
@@ -467,36 +442,22 @@ int get_table_type(struct action_util *a, const char *op_components[],
 int get_hdrfield_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_internal_operand *intern_op)
 {
-	const char *f1 = op_components[1], *f2 = op_components[2];
-	const char *f3 = op_components[3], *f4 = op_components[4];
+	const char *f2 = op_components[2], *f3 = op_components[3];
+	const char *f4 = op_components[4];
 	struct p4tc_u_operand *op = &intern_op->op;
-	struct hdrfield fields[32] = {0};
-	__u32 pipeid = 0, parserid = 0;
-	struct hdrfield *field;
-	int num_fields;
-
-	num_fields = p4tc_get_header_fields(fields, f1, f3, &pipeid);
-	if (num_fields < 0) {
-		fprintf(stderr, "Unable to get header %s\n", f3);
-		return -1;
-	}
+	__u32 parserid = 0;
+	size_t full_hdr_name_len;
 
 	parserid = atoi(f2);
-	field = p4tc_find_hdrfield(fields, f4, num_fields);
-	if (!field) {
-		fprintf(stderr,
-			"Unable to find header field in introspection file\n");
-		return -1;
-	}
 
-	op->pipeid = pipeid;
 	op->immedv = parserid;
-	op->immedv2 = field->id;
 
-	op->oper_datatype = field->ty->containid;
-	op->oper_startbit = field->startbit;
-	op->oper_endbit = field->endbit;
-	op->oper_cbitsize = field->ty->bitsz;
+	full_hdr_name_len = strnlen(f3, HDRFIELDNAMSIZ) + strnlen(f4, HDRFIELDNAMSIZ);
+	intern_op->extra_path = calloc(1, full_hdr_name_len + 1);
+	if (!intern_op->extra_path)
+		return -1;
+
+	snprintf(intern_op->extra_path, HDRFIELDNAMSIZ, "%s/%s", f3, f4);
 
 	return 0;
 }
@@ -504,45 +465,13 @@ int get_hdrfield_type(struct action_util *a, const char *op_components[],
 int get_act_param_type(struct action_util *a, const char *op_components[],
 		       struct p4tc_u_internal_operand *intern_op)
 {
-	struct p4tc_u_operand *op = &intern_op->op;
-	const char separator[2] = "/";
 	const char *param_name = op_components[1];
-	char act_name_copy[ACTNAMSIZ];
-	const char *pname;
-	const char *act_name;
-	int param_index = -1;
-	struct p4_param_s params[32];
-	__u32 pipeid, act_id;
-	int i, num_acts;
 
-	strcpy(act_name_copy, a->id);
-	pname = strtok(act_name_copy, separator);
-	act_name = a->id + strlen(pname) + strlen(separator);
-
-	num_acts = p4tc_get_act_params(params, pname, act_name, &pipeid,
-				       &act_id);
-	if (num_acts < 0)
+	intern_op->path = calloc(1, strnlen(param_name, TEMPLATENAMSZ));
+	if (!intern_op->path)
 		return -1;
 
-	for (i = 0; i < num_acts; i++) {
-		if (!strncmp(params[i].name, param_name, TEMPLATENAMSZ)) {
-			param_index = i;
-			break;
-		}
-	}
-
-	if (param_index < 0) {
-		fprintf(stderr, "Unable to find action param %s\n", param_name);
-		return -1;
-	}
-
-	op->pipeid = pipeid;
-	op->immedv = act_id;
-	op->immedv2 = params[param_index].id;
-	op->oper_datatype = params[param_index].containid;
-	op->oper_startbit = params[param_index].startbit;
-	op->oper_endbit = params[param_index].endbit;
-	op->oper_cbitsize = op->oper_endbit - op->oper_startbit + 1;
+	strlcpy(intern_op->path, param_name, TEMPLATENAMSZ);
 
 	return 0;
 }
@@ -575,50 +504,23 @@ int get_dev_type(struct action_util *a, const char *op_components[],
 int get_key_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op)
 {
-	struct p4_type_s *t = get_p4type_byid(P4T_KEY);
-	const char *f1 = op_components[1], *f2 = op_components[2];
+	const char *f2 = op_components[2];
 	struct p4tc_u_operand *op = &intern_op->op;
-	const char *f3 = op_components[3];
-	__u32 pipeid = 0, tbcid = 0;
-	__u32 tot_key_len = 0;
-	struct tkey keys[32];
+	const char *keyid_s = op_components[3];
 	__u32 key_id;
-	int num_keys;
-	int i, rc;
 
-	rc = p4tc_get_tables(f1, f2, &pipeid, &tbcid);
-	if (rc < 0) {
-		fprintf(stderr, "Unable to find table %s.%s\n", f1, f2);
-		return -1;
-	}
-
-	num_keys = p4tc_get_table_keys(keys, f1, f2, 0);
-	if (num_keys < 0)
-		return num_keys;
-
-	if (get_u32(&key_id, f3, 0)) {
+	if (get_u32(&key_id, keyid_s, 0)) {
 		fprintf(stderr, "Invalid key id %u\n", key_id);
 		return -1;
 	}
 
-	for (i = 0; i < num_keys; i++) {
-		if (key_id == keys[i].key_id)
-			tot_key_len += keys[i].type->bitsz;
-	}
-
-	if (tot_key_len > t->bitsz) {
-		fprintf(stderr, "key lenght exceeds maximum key size %lu\n",
-			t->bitsz);
-		return -1;
-	}
-
-	op->pipeid = pipeid;
-	op->oper_datatype = t->containid;
-	op->oper_startbit = t->startbit;
-	op->oper_endbit = tot_key_len - 1;
-	op->immedv = tbcid;
 	op->immedv2 = key_id;
-	op->oper_cbitsize = op->oper_endbit - op->oper_startbit + 1;
+
+	intern_op->path = calloc(1, strnlen(f2, TABLENAMSIZ) + 1);
+	if (!intern_op->path)
+		return -1;
+
+	strlcpy(intern_op->path, f2, TABLENAMSIZ);
 
 	return 0;
 }
@@ -628,13 +530,10 @@ int get_register_type(struct action_util *a, const char *op_components[],
 {
 	const char *f2 = op_components[1];
 	const char *f3 = op_components[2];
-	struct p4_reg_s regs[32];
 	struct p4tc_u_operand *op = &intern_op->op;
-	int num_regs = 0;
 	char *pr = NULL;
 	int idx = 0;
 	int rc;
-	int i;
 
 	rc = sscanf(f3, "%m[a-z0-9_/.%][%d]", &pr, &idx);
 	if (rc != 2 && idx >= 0) {
@@ -642,27 +541,12 @@ int get_register_type(struct action_util *a, const char *op_components[],
 		return -1;
 	}
 
-	rc = p4tc_get_pipeline_regs(regs, f2, &num_regs);
-	if (rc < 0)
-		return -1;
-
-	for (i = 0; i < num_regs; i++) {
-		if (strncmp(regs[i].name, pr, REGISTERNAMSIZ) == 0)
-			break;
-	}
-
-	if (i == num_regs) {
-		fprintf(stderr, "Unable to find register by name\n");
-		return -1;
-	}
-
-	op->pipeid = regs[i].pipeid;
-	op->oper_type = P4TC_OPER_REG;
-	op->immedv = regs[i].id;
 	op->immedv2 = idx;
-	op->oper_datatype = regs[i].containid;
-	op->oper_startbit = regs[i].startbit;
-	op->oper_endbit = regs[i].endbit;
+	intern_op->path = calloc(1, strnlen(pr, REGISTERNAMSIZ));
+	if (!intern_op->path)
+		return -1;
+
+	strlcpy(intern_op->path, pr, REGISTERNAMSIZ);
 
 	return 0;
 }
@@ -684,7 +568,6 @@ int get_res_type(struct action_util *a, const char *op_components[],
 	}
 
 	type = get_p4type_byname("bool");
-	op->pipeid = 0;
 	op->oper_datatype = type->containid;
 	op->oper_startbit = type->startbit;
 	op->oper_endbit = type->endbit;
@@ -709,8 +592,8 @@ static void print_operation(struct p4tc_u_operate *ins, FILE *f)
 	print_action_control(f, " / ", ins->op_ctl2, "\n");
 }
 
-static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f)
+static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
 
@@ -739,8 +622,8 @@ static void print_constant_type(struct p4tc_u_operand *oper, void *oppath,
 }
 
 
-static void print_key_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f)
+static void print_key_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f)
 {
 	struct p4_type_s *type;
 
@@ -755,14 +638,14 @@ static void print_key_type(struct p4tc_u_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "container", "\t    container %s", type->name);
 }
 
-static void print_table_type(struct p4tc_u_operand *oper, void *oppath,
-			     FILE *f)
+static void print_table_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			     void *oppath, void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s", "table");
 }
 
-static void print_hdrfield_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f)
+static void print_hdrfield_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f)
 {
 	struct p4_type_s *type;
 
@@ -777,8 +660,8 @@ static void print_hdrfield_type(struct p4tc_u_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "container", "\t    container %s", type->name);
 }
 
-static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f)
+static void print_dev_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f)
 {
 	int ifindex = oper->immedv;
 	const char *ifname = ll_index_to_name(ifindex);
@@ -787,8 +670,8 @@ static void print_dev_type(struct p4tc_u_operand *oper, void *oppath,
 	print_string(PRINT_ANY, "dev", "\t    dev %s", ifname);
 }
 
-static void print_res_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f)
+static void print_res_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "result");
 	if (oper->immedv == P4TC_CMDS_RESULTS_HIT)
@@ -797,8 +680,8 @@ static void print_res_type(struct p4tc_u_operand *oper, void *oppath,
 		print_string(PRINT_ANY, "result", "\t    results.%s", "miss");
 }
 
-static void print_act_type(struct p4tc_u_operand *oper, void *oppath,
-			   FILE *f)
+static void print_act_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *prefix, FILE *f)
 {
 	discover_actions();
 
@@ -808,19 +691,19 @@ static void print_act_type(struct p4tc_u_operand *oper, void *oppath,
 		print_uint(PRINT_ANY, "id", "\t    action id %u", oper->immedv);
 	} else {
 		struct action_util *a;
-		char pname[] = "kernel";
 
 		a = get_action_byid(oper->immedv);
 
-		print_string(PRINT_ANY, "pname", "\t    pipeline name %s\n", pname);
+		print_string(PRINT_ANY, "pname", "\t    pipeline name %s\n", "kernel");
 
 		if (a)
 			print_string(PRINT_ANY, "id", "\t    action id %s", a->id);
 	}
 }
 
-static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
-				 FILE *f)
+static void print_act_param_type(struct p4tc_u_operand *oper,
+				 char **p4tcpath, void *oppath,
+				 void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "param");
 
@@ -829,11 +712,11 @@ static void print_act_param_type(struct p4tc_u_operand *oper, void *oppath,
 	print_uint(PRINT_ANY, "paramid", "\t    param id %u", oper->immedv2);
 }
 
-static void print_metadata_type(struct p4tc_u_operand *oper,
-				void *oppath, FILE *f)
+static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
-	struct p4_metat_s *m;
+	char *pname = p4tcpath[0];
 	__u32 metaid;
 
 	print_string(PRINT_ANY, "type", " type %s\n", "metadata");
@@ -843,49 +726,30 @@ static void print_metadata_type(struct p4tc_u_operand *oper,
 	print_uint(PRINT_ANY, "endbit", " endbit %u\n", oper->oper_endbit);
 
 	metaid = oper->immedv;
-	m = get_meta_byid(oper->pipeid, metaid);
-	if (m) {
-		print_string(PRINT_ANY, "pname", "\t    pname %s\n", m->pname);
-		print_string(PRINT_ANY, "name", "\t    name %s", m->name);
-	}
+	if (oper->pipeid)
+		print_string(PRINT_ANY, "pname", "\t    pname %s\n", pname);
+	else
+		print_string(PRINT_ANY, "pname", "\t    pname %s\n", "kernel");
+	print_string(PRINT_ANY, "name", "\t    name %s", oppath);
 
 	print_uint(PRINT_ANY, "id", " id %u", metaid);
 
-	if (oppath)
-		print_string(PRINT_ANY, "path", "\t    path %s", oppath);
+	if (prefix)
+		print_string(PRINT_ANY, "prefix", "\t    prefix %s", prefix);
 
 }
 
-static void print_register_type(struct p4tc_u_operand *oper, void *oppath,
-				FILE *f)
+static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
+				void *oppath, void *prefix, FILE *f)
 {
 	struct p4_type_s *p4_type = get_p4type_byid(oper->oper_datatype);
-	struct p4_reg_s regs[32];
-	int num_regs;
-	int i;
-
-	num_regs = p4tc_get_regs(regs);
-	if (num_regs < 0) {
-		fprintf(stderr, "Failed to find registers\n");
-		return;
-	}
-
-	for (i = 0; i < num_regs; i++) {
-		if (regs[i].pipeid == oper->pipeid &&
-		    regs[i].id == oper->immedv)
-			break;
-	}
-
-	if (i == num_regs) {
-		fprintf(stderr, "Unable to find register by name\n");
-		return;
-	}
+	char *pname = p4tcpath[0];
 
 	print_string(PRINT_ANY, "type", " type %s\n", "register");
 
-	print_uint(PRINT_ANY, "pid", "\t    pipeline id %u\n", regs[i].pipeid);
+	print_uint(PRINT_ANY, "pid", "\t    pipeline id %u\n", oper->pipeid);
 	print_string(PRINT_ANY, "pname", "\t    pipeline name %s\n",
-		     regs[i].pname);
+		     pname);
 
 	print_string(PRINT_ANY, "container", "\t    container %s",
 		     p4_type->name);
@@ -895,15 +759,16 @@ static void print_register_type(struct p4tc_u_operand *oper, void *oppath,
 		   oper->immedv2);
 
 	print_string(PRINT_ANY, "regname", "\t    register name %s\n",
-		     regs[i].name);
-	print_uint(PRINT_ANY, "regid", "\t    register id %u\n", regs[i].id);
+		     oppath);
+	print_uint(PRINT_ANY, "regid", "\t    register id %u\n", oper->immedv);
 }
 
-static void print_operand_content(const char *ABC,
+static void print_operand_content(const char *ABC, struct action_util *au,
 				  struct p4tc_u_operand *oper,
-				  void *oppath, FILE *f)
+				  void *oppath, void *prefix, FILE *f)
 {
 	struct opnd_type_s *o;
+	char *p4tcpath[2];
 
 	if (!oper)
 		return;
@@ -915,7 +780,9 @@ static void print_operand_content(const char *ABC,
 		return;
 	}
 
-	o->print_opertype(oper, oppath, f);
+	parse_path(au->id, p4tcpath, "/");
+
+	o->print_opertype(oper, p4tcpath, oppath, prefix, f);
 
 	print_nl();
 }
@@ -1243,12 +1110,13 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 		struct p4tc_u_internal_operand *intern_op;
 		intern_op = &ins->opnds[P4TC_CMD_OPER_A];
 
-		intern_op->path = calloc(P4TC_CMD_MAX_OPER_PATH_LEN, sizeof(char));
-		if (!intern_op->path) {
+		intern_op->print_prefix = calloc(P4TC_CMD_MAX_OPER_PATH_LEN,
+					       sizeof(char));
+		if (!intern_op->print_prefix) {
 			fprintf(stderr, "Unable to allocate path\n");
 			return -1;
 		}
-		strncpy(intern_op->path, prefix,
+		strncpy(intern_op->print_prefix, prefix,
 			P4TC_CMD_MAX_OPER_PATH_LEN);
 	}
 
@@ -1870,6 +1738,20 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 				addattrstrz(n, MAX_MSG, P4TC_CMD_OPND_PATH,
 					    op->path);
 			}
+			if (op->extra_path) {
+				addattrstrz(n, MAX_MSG, P4TC_CMD_OPND_PATH_EXTRA,
+					    op->extra_path);
+			}
+			if (op->immedv_large) {
+				addattrstrz(n, MAX_MSG,
+					    P4TC_CMD_OPND_LARGE_CONSTANT,
+					    op->immedv_large);
+			}
+			if (op->print_prefix) {
+				addattrstrz(n, MAX_MSG,
+					    P4TC_CMD_OPND_PREFIX,
+					    op->print_prefix);
+			}
 			addattr_l(n, MAX_MSG, P4TC_CMD_OPND_INFO, &op->op,
 				  sizeof(struct p4tc_u_operand));
 			addattr_nest_end(n, count);
@@ -1883,10 +1765,11 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 	return 0;
 }
 
-static int p4tc_cmds_print_operand(const char *ABC, struct rtattr *op_attr,
-				   FILE *f)
+static int p4tc_cmds_print_operand(const char *ABC, struct action_util *au,
+				   struct rtattr *op_attr, FILE *f)
 {
-        void *path = NULL;
+	void *prefix = NULL;
+	void *path = NULL;
 	struct rtattr *tb[P4TC_CMD_OPND_MAX + 1];
 	struct p4tc_u_operand *opnd;
 
@@ -1898,18 +1781,22 @@ static int p4tc_cmds_print_operand(const char *ABC, struct rtattr *op_attr,
 	if (tb[P4TC_CMD_OPND_PATH])
 		path = RTA_DATA(tb[P4TC_CMD_OPND_PATH]);
 
+	if (tb[P4TC_CMD_OPND_PREFIX])
+		prefix = RTA_DATA(tb[P4TC_CMD_OPND_PREFIX]);
+
 	if (!tb[P4TC_CMD_OPND_INFO]) {
 		fprintf(stderr, "Missing p4tc_cmds operand information\n");
 		return -1;
 	}
 
 	opnd = RTA_DATA(tb[P4TC_CMD_OPND_INFO]);
-	print_operand_content(ABC, opnd, path, stdout);
+	print_operand_content(ABC, au, opnd, path, prefix, stdout);
 
 	return 0;
 }
 
-static int p4tc_cmds_print_operands(struct rtattr *op_attr, FILE *f)
+static int p4tc_cmds_print_operands(struct action_util *au,
+				    struct rtattr *op_attr, FILE *f)
 {
 	struct rtattr *tb[P4TC_CMD_OPERS_MAX + 1];
 	char ABC[] = { 'O', 'P', 'A' };
@@ -1922,7 +1809,7 @@ static int p4tc_cmds_print_operands(struct rtattr *op_attr, FILE *f)
 
 	for (i = 1; i < P4TC_CMD_OPERS_MAX + 1 && tb[i]; i++) {
 		open_json_object(ABC);
-		p4tc_cmds_print_operand(&ABC[2], tb[i], f);
+		p4tc_cmds_print_operand(&ABC[2], au, tb[i], f);
 		close_json_object();
 
 		ABC[2] = ABC[2] + 1;
@@ -1931,7 +1818,8 @@ static int p4tc_cmds_print_operands(struct rtattr *op_attr, FILE *f)
 	return 0;
 }
 
-static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
+static int p4tc_cmds_print_ops(int i, struct action_util *au,
+			       struct rtattr *op_attr, FILE *f)
 {
 	struct rtattr *tb[P4TC_CMD_OPER_MAX + 1];
 	struct p4tc_u_operate *op_entry;
@@ -1950,7 +1838,7 @@ static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
 
 	open_json_object("operands");
 
-	err = p4tc_cmds_print_operands(tb[P4TC_CMD_OPER_LIST], f);
+	err = p4tc_cmds_print_operands(au, tb[P4TC_CMD_OPER_LIST], f);
         if (err < 0)
                 return err;
 
@@ -1959,24 +1847,17 @@ static int p4tc_cmds_print_ops(int i, struct rtattr *op_attr, FILE *f)
 	return 0;
 }
 
-int p4tc_print_cmds(FILE *f, struct rtattr *arg)
+int p4tc_print_cmds(FILE *f, struct action_util *au, struct rtattr *arg)
 {
 	struct rtattr *oplist_attr[P4TC_CMDS_LIST_MAX + 1];
-	struct p4_metat_s metadata[32];
 	int err, i;
-
-	register_kernel_metadata();
-	if (fill_user_metadata(metadata) < 0) {
-		unregister_kernel_metadata();
-		return -1;
-	}
 
 	parse_rtattr_nested(oplist_attr, P4TC_CMDS_LIST_MAX, arg);
 
 	open_json_array(PRINT_JSON, "operations");
 	for (i = 1; i <= P4TC_CMDS_LIST_MAX && oplist_attr[i]; i++) {
 		open_json_object(NULL);
-		err = p4tc_cmds_print_ops(i, oplist_attr[i], f);
+		err = p4tc_cmds_print_ops(i, au, oplist_attr[i], f);
 		if (err) {
 			unregister_kernel_metadata();
 			return err;
@@ -1986,8 +1867,6 @@ int p4tc_print_cmds(FILE *f, struct rtattr *arg)
 	close_json_array(PRINT_JSON, NULL);
 
 	print_nl();
-
-	unregister_kernel_metadata();
 
 	return 0;
 }

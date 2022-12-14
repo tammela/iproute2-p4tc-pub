@@ -380,11 +380,13 @@ static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
 
 	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
 
-	if (tb[P4TC_ACT_NAME])
+	if (tb[P4TC_ACT_NAME]) {
 		print_string(PRINT_ANY, "kind", "%s ",
 			     RTA_DATA(tb[P4TC_ACT_NAME]));
-	else
-		print_string(PRINT_ANY, "kind", "%s ", "metact");
+	} else {
+		fprintf(stderr, "Action event must have act name");
+		return -1;
+	}
 
 	if (!tb[P4TC_ACT_PARMS] || !tb[P4TC_ACT_CMDS_LIST]) {
 		fprintf(stderr, "Missing p4tc_cmds parameters\n");
@@ -411,7 +413,10 @@ static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
 		close_json_array(PRINT_JSON, NULL);
 	}
 
-	return p4tc_print_cmds(f, tb[P4TC_ACT_CMDS_LIST]);
+	strlcpy(au->id, RTA_DATA(tb[P4TC_ACT_NAME]),
+		RTA_LENGTH(RTA_PAYLOAD(tb[P4TC_ACT_NAME])));
+
+	return p4tc_print_cmds(f, au, tb[P4TC_ACT_CMDS_LIST]);
 }
 
 struct action_util dyna_action_util = {
