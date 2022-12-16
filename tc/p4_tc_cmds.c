@@ -133,7 +133,8 @@ struct opnd_type_s {
 	int (*get_opertype)(struct action_util *a, const char *op_components[],
 			    struct p4tc_u_internal_operand *intern_op);
 	void (*print_opertype)(struct p4tc_u_operand *oper, char **p4tcpath,
-			       void *oppath, void *prefix, FILE *f);
+			       void *oppath, void *immedv_large, void *prefix,
+			       FILE *f);
 };
 
 int get_metadata_type(struct action_util *a, const char *op_components[],
@@ -158,25 +159,25 @@ int get_register_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_internal_operand *intern_op);
 
 static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f);
+				void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f);
+				void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_act_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f);
+			   void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_key_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f);
+			   void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_table_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			     void *oppath, void *prefix, FILE *f);
+			     void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_res_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			    void *oppath, void *prefix, FILE *f);
+			    void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_hdrfield_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f);
+				void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_dev_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f);
+			   void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_act_param_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				 void *oppath, void *prefix, FILE *f);
+				 void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f);
+				void *oppath, void *immedv_large, void *prefix, FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
@@ -239,25 +240,29 @@ int get_act_type(struct action_util *a, const char *op_components[],
 	if (strcmp("kernel", f1) == 0)
 		op->oper_flags |= DATA_USES_ROOT_PIPE;
 
-	if (get_u32(&actionindex, f3, 0)) {
-		fprintf(stderr, "Invalid actionindex %s:%s\n", f2, f3);
-		return -1;
+	if (f3) {
+		if (get_u32(&actionindex, f3, 0)) {
+			fprintf(stderr, "Invalid actionindex %s:%s\n", f2, f3);
+			return -1;
+		}
+
+		op->immedv2 = actionindex;
 	}
 
 	if (!action_a2n(f2, &result, true)) {
 		f2 = "gact";
 	}
-	au = get_action_kind(f2);
-	if (au)
-		op->immedv = au->aid;
+	if (op->oper_flags & DATA_USES_ROOT_PIPE) {
+		au = get_action_kind(f2);
+		if (au)
+			op->immedv = au->aid;
+	}
 
 	intern_op->path = calloc(1, strnlen(f2, ACTNAMSIZ) + 1);
 	if (!intern_op->path)
 		return -1;
 
 	strlcpy(intern_op->path, f2, ACTNAMSIZ);
-
-	op->immedv2 = actionindex;
 
 	return 0;
 }
@@ -357,6 +362,8 @@ int get_const_type(struct action_util *a, const char *op_components[],
 	op->oper_datatype = t->containid;
 	op->oper_cbitsize = t->bitsz;
 	op->pipeid = 0;
+
+	op->oper_flags |= DATA_HAS_TYPE_INFO;
 
 	val.bitsz = bitsz;
 	if (t->bitsz > 32) {
@@ -593,7 +600,8 @@ static void print_operation(struct p4tc_u_operate *ins, FILE *f)
 }
 
 static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f)
+				void *oppath, void *immedv_large, void *prefix,
+				FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
 
@@ -612,7 +620,7 @@ static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
 		struct p4_type_value val = {NULL};
 
 		if (t->bitsz > 32) {
-			val.value = oppath;
+			val.value = immedv_large;
 			t->print_p4t("value", &val, f);
 		} else {
 			val.value = &oper->immedv;
@@ -623,7 +631,7 @@ static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
 
 
 static void print_key_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f)
+			   void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	struct p4_type_s *type;
 
@@ -639,13 +647,13 @@ static void print_key_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_table_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			     void *oppath, void *prefix, FILE *f)
+			     void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s", "table");
 }
 
 static void print_hdrfield_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f)
+				void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	struct p4_type_s *type;
 
@@ -661,7 +669,7 @@ static void print_hdrfield_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_dev_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f)
+			   void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	int ifindex = oper->immedv;
 	const char *ifname = ll_index_to_name(ifindex);
@@ -671,7 +679,7 @@ static void print_dev_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_res_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f)
+			   void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "result");
 	if (oper->immedv == P4TC_CMDS_RESULTS_HIT)
@@ -681,7 +689,7 @@ static void print_res_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_act_type(struct p4tc_u_operand *oper, char **p4tcpath,
-			   void *oppath, void *prefix, FILE *f)
+			   void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	discover_actions();
 
@@ -702,7 +710,7 @@ static void print_act_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_act_param_type(struct p4tc_u_operand *oper,
-				 char **p4tcpath, void *oppath,
+				 char **p4tcpath, void *oppath, void *immedv_large,
 				 void *prefix, FILE *f)
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "param");
@@ -713,7 +721,7 @@ static void print_act_param_type(struct p4tc_u_operand *oper,
 }
 
 static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f)
+				void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	struct p4_type_s *t = get_p4type_byid(oper->oper_datatype);
 	char *pname = p4tcpath[0];
@@ -740,7 +748,7 @@ static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
-				void *oppath, void *prefix, FILE *f)
+				void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
 	struct p4_type_s *p4_type = get_p4type_byid(oper->oper_datatype);
 	char *pname = p4tcpath[0];
@@ -764,8 +772,8 @@ static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
 }
 
 static void print_operand_content(const char *ABC, struct action_util *au,
-				  struct p4tc_u_operand *oper,
-				  void *oppath, void *prefix, FILE *f)
+				  struct p4tc_u_operand *oper, void *oppath,
+				  void *immedv_large, void *prefix, FILE *f)
 {
 	struct opnd_type_s *o;
 	char *p4tcpath[2];
@@ -782,7 +790,7 @@ static void print_operand_content(const char *ABC, struct action_util *au,
 
 	parse_path(au->id, p4tcpath, "/");
 
-	o->print_opertype(oper, p4tcpath, oppath, prefix, f);
+	o->print_opertype(oper, p4tcpath, oppath, immedv_large, prefix, f);
 
 	print_nl();
 }
@@ -872,13 +880,14 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	int num_Acomponents = 0;
 	char **argv = *argv_p;
 	int argc = *argc_p;
+	int i = 1;
 	struct opnd_type_s *o;
 	char *argsA;
 
 	argsA = strdupa(*argv);
 
 	num_Acomponents = parse_operand_path(argsA, Af);
-	if (num_Acomponents < 3) {
+	if (num_Acomponents < 2) {
 		fprintf(stderr, "Invalid operand A %s\n", *argv);
 		return -1;
 	}
@@ -898,6 +907,45 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	}
 
 	NEXT_ARG_FWD();
+
+	while (argc && strcmp(*argv, "control") && strcmp(*argv, "cmd") &&
+	       strcmp(*argv, "param")) {
+		char *components[MAX_PATH_COMPONENTS] = {};
+		struct p4tc_u_internal_operand *op;
+		int num_components;
+		char *args;
+		int rc;
+
+		if (i == P4TC_CMD_OPERS_MAX) {
+			fprintf(stderr,
+				"Concat can have at most %u operands\n",
+				P4TC_CMD_OPERS_MAX);
+			return -1;
+		}
+
+		op = &ins->opnds[i];
+
+		args = strdupa(*argv);
+
+		num_components = parse_operand_path(args, components);
+		if (!args || num_components < 2) {
+			fprintf(stderr, "Invalid operand\n");
+			return -1;
+		}
+
+		rc = populate_oper_path(a, components, op);
+		if (rc < 0) {
+			fprintf(stderr, "XXX: Invalid operand %s\n",
+				components[0]);
+			return -1;
+		}
+
+		NEXT_ARG_FWD();
+
+		i++;
+	}
+
+	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
 		int rc = parse_cmd_control(&argc, &argv, op);
@@ -907,6 +955,7 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 			return -1;
 		}
 	}
+	PREV_ARG();
 
 	*argc_p = argc;
 	*argv_p = argv;
@@ -929,7 +978,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	argsA = strdupa(*argv);
 
 	num_Acomponents = parse_operand_path(argsA, Acomponents);
-	if (num_Acomponents < 3) {
+	if (num_Acomponents < 2) {
 		fprintf(stderr, "Invalid operand A %s\n", *argv);
 		return -1;
 	}
@@ -938,7 +987,7 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	argsB = strdupa(*argv);
 
 	num_Bcomponents = parse_operand_path(argsB, Bcomponents);
-	if (num_Bcomponents < 3)
+	if (num_Bcomponents < 2)
 		return -1;
 
 	if (NEXT_ARG_OK()) {
@@ -1406,7 +1455,7 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			}
 
 			discover_actions();
-			print_known_actions();
+			//print_known_actions();
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
 				fprintf(stderr, "p4tc_cmds bad <act>: %d:<%s>\n",
@@ -1765,9 +1814,10 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 	return 0;
 }
 
-static int p4tc_cmds_print_operand(const char *ABC, struct action_util *au,
-				   struct rtattr *op_attr, FILE *f)
+int p4tc_cmds_print_operand(const char *ABC, struct action_util *au,
+			    struct rtattr *op_attr, FILE *f)
 {
+	void *immedv_large = NULL;
 	void *prefix = NULL;
 	void *path = NULL;
 	struct rtattr *tb[P4TC_CMD_OPND_MAX + 1];
@@ -1784,13 +1834,17 @@ static int p4tc_cmds_print_operand(const char *ABC, struct action_util *au,
 	if (tb[P4TC_CMD_OPND_PREFIX])
 		prefix = RTA_DATA(tb[P4TC_CMD_OPND_PREFIX]);
 
+	if (tb[P4TC_CMD_OPND_LARGE_CONSTANT])
+		immedv_large = RTA_DATA(tb[P4TC_CMD_OPND_LARGE_CONSTANT]);
+
 	if (!tb[P4TC_CMD_OPND_INFO]) {
 		fprintf(stderr, "Missing p4tc_cmds operand information\n");
 		return -1;
 	}
 
 	opnd = RTA_DATA(tb[P4TC_CMD_OPND_INFO]);
-	print_operand_content(ABC, au, opnd, path, prefix, stdout);
+	print_operand_content(ABC, au, opnd, path, immedv_large, prefix,
+			      stdout);
 
 	return 0;
 }
