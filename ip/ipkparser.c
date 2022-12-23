@@ -1,28 +1,7 @@
-// SPDX-License-Identifier: BSD-2-Clause-FreeBSD
+// SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2022, SiPanda Inc.
  *
  * ipkparser.c - ip parser(kParser) CLI
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  *
  * Author:     Pratyush Kumar Khan <pratyush@sipanda.io>
  */
@@ -48,15 +27,6 @@ struct kparser_cmd_args_key_aliases {
 };
 
 static struct kparser_cmd_args_key_aliases op_alias_map[KPARSER_NS_MAX];
-
-static inline int keymatches(const char *prefix, const char *string)
-{
-	if (!prefix || !string)
-		return 0;
-
-	return strcmp(prefix, string);
-}
-
 
 static inline void store_alias(int nsid, const char *key, const char *alias)
 {
@@ -439,11 +409,19 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 		case KPARSER_ARG_VAL_SET:
 			for (j = 0; j < curr_arg->value_set_len; j++) {
 				if (memcmp(((void *) cmd_arg) + w_offset,
-					&curr_arg->value_set[j].set_value_enum,
-					w_len))
+					   &curr_arg->value_set[j].set_value_enum,
+					   w_len))
 					continue;
-				print_string(PRINT_ANY, key, "", (char *)
-					curr_arg->value_set[j].set_value_str);
+				if ((strcmp(curr_arg->value_set[j].set_value_str,
+					    "true") == 0) ||
+				    strcmp(curr_arg->value_set[j].set_value_str,
+					   "false") == 0)
+					print_bool(PRINT_ANY, key, "",
+						   strcmp(curr_arg->value_set[j].set_value_str,
+							  "false") == 0);
+				else
+					print_string(PRINT_ANY, key, "", (char *)
+						     curr_arg->value_set[j].set_value_str);
 			}
 			break;
 		case KPARSER_ARG_VAL_ARRAY:
@@ -896,8 +874,7 @@ do {									\
 } while (0)
 
 int do_cli(int nsid, int op, int argc, int *argidx, const char **argv,
-		const char *hybrid_token, bool preprocess_done,
-		bool undesired_key_check)
+	   const char *hybrid_token, bool preprocess_done, bool undesired_key_check)
 {
 	size_t cmd_rsp_size = 0, old_cmd_rsp_size, w_offset, w_len, cmd_arg_len;
 	bool ret = true, value_err = false, ignore_min_max = false;
@@ -1485,6 +1462,17 @@ static int __do_cli(int op, int argc, int *argidx,
 
 		if (keymatches_aliases(ns, g_namespaces[i]->name,
 					g_namespaces[i]->aliases, 1) == 0) {
+
+
+			if (op == op_lock || op == op_unlock) {
+				if (strcmp(g_namespaces[i]->name, "parserlockunlock")) {
+					fprintf(stderr,
+						"lock/unlock operation is only supported by object"
+						" parserlockunlock\n");
+					return -EINVAL;
+				}
+			}
+
 			(*argidx)++;
 			return do_cli(i, op, argc, argidx, argv,
 					hybrid_token, false, true);
@@ -1497,14 +1485,7 @@ errout:
 	return -EINVAL;
 }
 
-struct kparser_cli_ops {
-	int op;
-	const char *op_name;
-	const char *description;
-	bool hidden;
-};
-
-static struct kparser_cli_ops cli_ops[] = {
+struct kparser_cli_ops cli_ops[] = {
 	{
 		.op_name = "create",
 		.op = op_create,
@@ -1520,6 +1501,7 @@ static struct kparser_cli_ops cli_ops[] = {
 		.op_name = "update",
 		.op = op_update,
 		.description = "modify an object",
+		.hidden = true,
 	},
 #endif
 	{
@@ -2036,6 +2018,8 @@ int do_kparser(int argc, char **argv)
 		}
 
 		if (keymatches(argv[argidx], cli_ops[i].op_name) == 0) {
+			if (cli_ops[i].hidden)
+				break;
 			argidx++;
 			return __do_cli(cli_ops[i].op, argc, &argidx,
 				      (const char **) argv);

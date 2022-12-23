@@ -1,28 +1,7 @@
-/* SPDX-License-Identifier: BSD-2-Clause-FreeBSD */
+/* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2022, SiPanda Inc.
  *
  * kparser_common.h - ip parser(kParser) CLI common header file
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
  *
  * Author:     Pratyush Kumar Khan <pratyush@sipanda.io>
  */
@@ -38,9 +17,9 @@
 #define KPARSER_MAX_STR_LEN_U8				6
 #define KPARSER_MAX_STR_LEN_U16				8
 #define KPARSER_MAX_STR_LEN_U32				12
-#define KPARSER_MAX_STR_LEN_U64				16
+#define KPARSER_MAX_STR_LEN_U64				128
 
-#define KPARSER_SET_VAL_LEN_MAX				64
+#define KPARSER_SET_VAL_LEN_MAX				164
 #define KPARSER_DEFAULT_U16_MASK			0xffff
 #define KPARSER_DEFAULT_U32_MASK			0xffffffff
 
@@ -74,6 +53,15 @@ enum kparser_print_id {
 	KPARSER_PRINT_INT,
 	KPARSER_PRINT_HEX,
 };
+
+struct kparser_cli_ops {
+	int op;
+	const char *op_name;
+	const char *description;
+	bool hidden;
+};
+
+extern struct kparser_cli_ops cli_ops[];
 
 enum {
 	op_create = 0,
@@ -171,5 +159,17 @@ struct kparser_arg_key_val_token {
 	bool dontreport;
 	bool id;
 };
+
+#define kparsersetbit(A, k) (A[(k)/BITS_IN_U32] |= (1 << ((k) % BITS_IN_U32)))
+#define kparserclearbit(A, k) (A[(k)/BITS_IN_U32] &= ~(1 << ((k) % BITS_IN_U32)))
+#define kparsertestbit(A, k) (1 & (A[(k)/BITS_IN_U32] >> ((k) % BITS_IN_U32)))
+
+static inline int keymatches(const char *prefix, const char *string)
+{
+	if (!prefix || !string)
+		return 0;
+
+	return strcmp(prefix, string);
+}
 
 #endif /* _KPARSER_COMMON_H */
