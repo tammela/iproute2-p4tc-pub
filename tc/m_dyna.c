@@ -75,6 +75,7 @@ static int dyna_add_param(struct param *param, const char *value, bool in_act,
 
 	if (in_act) {
 		struct p4_type_value val;
+		struct rtattr *nest_val;
 		struct p4_type_s *t;
 		void *new_value;
 		void *new_mask;
@@ -104,7 +105,11 @@ static int dyna_add_param(struct param *param, const char *value, bool in_act,
 			goto free_mask;
 		}
 
-		addattr_l(n, MAX_MSG, P4TC_ACT_PARAMS_VALUE, new_value, sz);
+		nest_val = addattr_nest(n, MAX_MSG,
+					P4TC_ACT_PARAMS_VALUE | NLA_F_NESTED);
+		addattr_l(n, MAX_MSG, P4TC_ACT_PARAMS_VALUE_RAW, new_value, sz);
+		addattr_nest_end(n, nest_val);
+
 		addattr_l(n, MAX_MSG, P4TC_ACT_PARAMS_MASK, new_mask, sz);
 
 free_mask:
@@ -174,6 +179,7 @@ static int dyna_parse_param(int *argc_p, char ***argv_p, bool in_act,
 
 	if (dyna_add_param(&param, *argv, in_act, n) < 0)
 		return -1;
+
 	if (!in_act)
 		PREV_ARG();
 
@@ -285,7 +291,7 @@ err_out:
 
 static int
 parse_dyna_cb(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
-	    struct nlmsghdr *n)
+	      struct nlmsghdr *n)
 {
 	char **argv = *argv_p;
 	int argc = *argc_p;
@@ -303,7 +309,36 @@ parse_dyna_cb(struct action_util *a, int *argc_p, char ***argv_p, int tca_id,
 	return ret;
 }
 
-static int print_dyna_parm(FILE *f, struct rtattr *arg)
+static int print_dyna_parm_value(FILE *f, struct action_util *au,
+				 struct p4_type_s *t, struct rtattr *arg,
+				 void *mask)
+{
+	struct rtattr *tb[P4TC_ACT_VALUE_PARAMS_MAX + 1];
+	struct p4_type_value val;
+	void *value;
+
+	parse_rtattr_nested(tb, P4TC_ACT_VALUE_PARAMS_MAX, arg);
+
+	if (tb[P4TC_ACT_PARAMS_VALUE_OPND]) {
+		print_string(PRINT_FP, NULL, "\n\t  value:\n", "");
+		open_json_object("value");
+		p4tc_cmds_print_operand("A", au,
+					tb[P4TC_ACT_PARAMS_VALUE_OPND], f);
+		close_json_object();
+		print_string(PRINT_FP, NULL, "\t", "");
+	} else {
+		value = RTA_DATA(tb[P4TC_ACT_PARAMS_VALUE_RAW]);
+
+		val.value = value;
+		val.mask = mask;
+		if (t->print_p4t)
+			t->print_p4t("raw value", &val, f);
+	}
+
+	return 0;
+}
+
+static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 {
 	struct rtattr *tb[P4TC_ACT_PARAMS_MAX + 1];
 	struct p4_type_s *t;
@@ -334,14 +369,8 @@ static int print_dyna_parm(FILE *f, struct rtattr *arg)
 	}
 
 	if (tb[P4TC_ACT_PARAMS_VALUE]) {
-		void *value = RTA_DATA(tb[P4TC_ACT_PARAMS_VALUE]);
-		void *mask = RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]);
-		struct p4_type_value val;
-
-		val.value = value;
-		val.mask = mask;
-		if (t->print_p4t)
-			t->print_p4t("value", &val, f);
+		print_dyna_parm_value(f, au, t, tb[P4TC_ACT_PARAMS_VALUE],
+				      RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]));
 	}
 
 	if (tb[P4TC_ACT_PARAMS_ID]) {
@@ -354,7 +383,7 @@ static int print_dyna_parm(FILE *f, struct rtattr *arg)
 	return 0;
 }
 
-int print_dyna_parms(struct rtattr *arg, FILE *f)
+int print_dyna_parms(struct action_util *au, struct rtattr *arg, FILE *f)
 {
 	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
 	int i;
@@ -363,7 +392,7 @@ int print_dyna_parms(struct rtattr *arg, FILE *f)
 
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		open_json_object(NULL);
-		print_dyna_parm(f, tb[i]);
+		print_dyna_parm(f, au, tb[i]);
 		close_json_object();
 	}
 
@@ -409,7 +438,7 @@ static int print_dyna(struct action_util *au, FILE *f, struct rtattr *arg)
 	if (tb[P4TC_ACT_PARMS]) {
 		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
 		open_json_array(PRINT_JSON, "params");
-		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
+		print_dyna_parms(au, tb[P4TC_ACT_PARMS], f);
 		close_json_array(PRINT_JSON, NULL);
 	}
 

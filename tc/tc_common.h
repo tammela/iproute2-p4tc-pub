@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
+#include "tc_util.h"
+
 #define TCA_BUF_MAX	(64*1024)
 
 extern struct rtnl_handle rth;
@@ -16,7 +18,7 @@ int do_exec(int argc, char **argv);
 
 int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *pname,
 	     char *act_name, struct nlmsghdr *n);
-int print_dyna_parms(struct rtattr *arg, FILE *f);
+int print_dyna_parms(struct action_util *au, struct rtattr *arg, FILE *f);
 int print_p4tmpl(struct nlmsghdr *n, void *arg);
 int print_action(struct nlmsghdr *n, void *arg);
 int print_table(struct nlmsghdr *n, void *arg);

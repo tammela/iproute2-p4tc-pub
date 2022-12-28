@@ -4,7 +4,6 @@
 
 #include <linux/types.h>
 #include <linux/pkt_sched.h>
-#include <linux/p4tc_entities.h>
 #include <linux/pkt_cls.h>
 
 /* pipeline header */
@@ -268,6 +267,15 @@ enum {
 
 /* Action params attributes */
 enum {
+	P4TC_ACT_PARAMS_VALUE_UNSPEC,
+	P4TC_ACT_PARAMS_VALUE_RAW, /* binary */
+	P4TC_ACT_PARAMS_VALUE_OPND, /* struct p4tc_u_operand */
+	__P4TC_ACT_PARAMS_VALUE_MAX
+};
+#define P4TC_ACT_VALUE_PARAMS_MAX __P4TC_ACT_PARAMS_VALUE_MAX
+
+/* Action params attributes */
+enum {
 	P4TC_ACT_PARAMS_UNSPEC,
 	P4TC_ACT_PARAMS_NAME, /* string */
 	P4TC_ACT_PARAMS_ID, /* u32 */
@@ -330,6 +338,13 @@ enum {
 	__P4TC_REGISTER_MAX
 };
 #define P4TC_REGISTER_MAX (__P4TC_REGISTER_MAX - 1)
+
+enum {
+	P4TC_ENTITY_UNSPEC,
+	P4TC_ENTITY_KERNEL,
+	P4TC_ENTITY_TC,
+	P4TC_ENTITY_MAX
+};
 
 #define P4TC_RTA(r)  ((struct rtattr *)(((char *)(r)) + NLMSG_ALIGN(sizeof(struct p4tcmsg))))
 
@@ -428,9 +443,7 @@ enum {
 
 /* P4TC_CMD_OPER_INFO operand*/
 struct p4tc_u_operand {
-	__u32 immedv;		/* immediate value, otherwise stored in
-				 * P4TC_CMD_OPND_PATH
-				 */
+	__u32 immedv;		/* immediate value */
 	__u32 immedv2;
 	__u32 pipeid;		/* 0 for kernel-global */
 	__u8 oper_type;		/* P4TC_OPER_XXX */

@@ -351,8 +351,14 @@ static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
 static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
-	const char *ifname = val->value;
+	const __u32 *ifindex = val->value;
+	const char *ifname = ll_index_to_name(*ifindex);
 	SPRINT_BUF(buf);
+
+	if (!ifname) {
+		print_uint(PRINT_ANY, NULL, "Unknown ifindex %", *ifindex);
+		return;
+	}
 
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %s", SPRINT_BSIZE);

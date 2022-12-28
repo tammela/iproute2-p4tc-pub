@@ -106,7 +106,7 @@ static struct p4_metat_s ifindex_meta = {
 
 static struct p4_metat_s iif_meta = {
 	.id = P4TC_KERNEL_META_SKBIIF,
-	.containid = P4T_S32,
+	.containid = P4T_DEV,
 	.startbit = 0,
 	.endbit = 31,
 	.name = "iif",
@@ -733,6 +733,8 @@ static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 		const char *name = RTA_DATA(tb[P4TC_ACT_NAME]);
 
 		print_string(PRINT_ANY, "aname", "    template action name %s\n", name);
+		strlcpy(au.id, RTA_DATA(tb[P4TC_ACT_NAME]),
+			RTA_PAYLOAD(RTA_LENGTH(tb[P4TC_ACT_NAME])));
 	} else {
 		fprintf(stderr, "Must specify action name\n");
 		return -1;
@@ -744,15 +746,12 @@ static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
 	if (tb[P4TC_ACT_PARMS]) {
 		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
 		open_json_array(PRINT_JSON, "params");
-		print_dyna_parms(tb[P4TC_ACT_PARMS], f);
+		print_dyna_parms(&au, tb[P4TC_ACT_PARMS], f);
 		close_json_array(PRINT_JSON, NULL);
 	}
 
-	if (tb[P4TC_ACT_CMDS_LIST]) {
-		strlcpy(au.id, RTA_DATA(tb[P4TC_ACT_NAME]),
-			RTA_PAYLOAD(RTA_LENGTH(tb[P4TC_ACT_NAME])));
+	if (tb[P4TC_ACT_CMDS_LIST])
 		p4tc_print_cmds(f, &au, tb[P4TC_ACT_CMDS_LIST]);
-	}
 
 	return 0;
 }

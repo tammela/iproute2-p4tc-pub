@@ -26,8 +26,6 @@
 #include <asm/types.h>
 #include <linux/rtnetlink.h>
 
-#include <linux/p4tc_entities.h>
-
 #include "p4tc_names.h"
 #include "names.h"
 #include "utils.h"
