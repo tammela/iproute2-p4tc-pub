@@ -28,7 +28,9 @@
 #include "p4_types.h"
 #include "p4tc_common.h"
 #include "p4tc_cmds.h"
+
 #include <linux/p4tc.h>
+#include <ctype.h>
 
 #ifndef MAX_PATH_COMPONENTS
 #define MAX_PATH_COMPONENTS 5
@@ -45,6 +47,8 @@ struct p4tc_u_internal_operand {
 struct p4tc_cmds_v {
 	struct p4tc_u_internal_operand opnds[P4TC_CMD_OPERS_MAX];
 	struct p4tc_u_operate ins;
+	char *label1;
+	char *label2;
 };
 
 static struct p4tc_cmds_v INS[P4TC_CMDS_LIST_MAX];
@@ -65,6 +69,10 @@ static int parse_binarith_operands(struct action_util *a, int *argc_p,
 				   char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_concat_operands(struct action_util *a, int *argc_p,
 				 char ***argv_p, struct p4tc_cmds_v *ins);
+static int parse_jump_operands(struct action_util *a, int *argc_p,
+			       char ***argv_p, struct p4tc_cmds_v *ins);
+static int parse_label_operands(struct action_util *a, int *argc_p,
+			       char ***argv_p, struct p4tc_cmds_v *ins);
 
 struct op_type_s {
         int id;
@@ -97,7 +105,8 @@ static struct op_type_s op_types [] = {
 	{P4TC_CMD_OP_BAND, "band", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_BOR, "bor", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_BXOR, "bxor", parse_binarith_operands, NULL },
-
+	{P4TC_CMD_OP_JUMP, "jump", parse_jump_operands, NULL },
+	{P4TC_CMD_OP_LABEL, "label", parse_label_operands, NULL },
 };
 
 static struct op_type_s *get_op_byname(const char *name)
@@ -157,7 +166,8 @@ int get_dev_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op);
 int get_register_type(struct action_util *a, const char *op_components[],
 		      struct p4tc_u_internal_operand *intern_op);
-
+int get_label_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_internal_operand *intern_op);
 static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
 				void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
@@ -178,6 +188,8 @@ static void print_act_param_type(struct p4tc_u_operand *oper, char **p4tcpath,
 				 void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
 				void *oppath, void *immedv_large, void *prefix, FILE *f);
+static void print_label_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			     void *oppath, void *immedv_large, void *prefix, FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
@@ -197,6 +209,8 @@ static struct opnd_type_s opnd_types [] = {
 	 print_dev_type},
 	{P4TC_OPER_REG, P4T_PATH, "register", get_register_type,
 	 print_register_type},
+	{P4TC_OPER_LABEL, P4T_PATH, "label", get_label_type,
+	 print_label_type},
 };
 
 static struct opnd_type_s *get_optype_byname(const char *name)
@@ -442,6 +456,56 @@ int get_table_type(struct action_util *a, const char *op_components[],
 		return -1;
 
 	strlcpy(intern_op->path, f2, TABLENAMSIZ);
+
+	return 0;
+}
+
+static int get_jump_type(struct action_util *a, int argc, char **argv,
+			 char *op_components[],
+			 struct p4tc_u_internal_operand *intern_op)
+{
+	const char *f0 = op_components[0];
+
+	intern_op->op.oper_type = P4TC_OPER_LABEL;
+
+	if (isdigit(*f0)) {
+		int jmp_cnt;
+
+		jmp_cnt = atoi(f0);
+		if (jmp_cnt <= 0) {
+			fprintf(stderr, "Backward jumps are not allowed\n");
+			return -1;
+		}
+
+		return parse_action_control(&argc, &argv,
+					    (int *)&intern_op->op.immedv, false);
+	}
+
+	intern_op->path = calloc(1, strnlen(f0, LABELNAMSIZ) + 1);
+	if (!intern_op->path) {
+		fprintf(stderr, "Unable to allocate jump path");
+		return -1;
+	}
+
+	strlcpy(intern_op->path, f0, LABELNAMSIZ);
+
+	return 0;
+}
+
+int get_label_type(struct action_util *a, const char *op_components[],
+		   struct p4tc_u_internal_operand *intern_op)
+{
+	const char *f0 = op_components[0];
+
+	intern_op->path = calloc(1, strnlen(f0, LABELNAMSIZ) + 1);
+	if (!intern_op->path) {
+		fprintf(stderr, "Unable to allocate label path");
+		return -1;
+	}
+
+	intern_op->op.oper_type = P4TC_OPER_LABEL;
+
+	strlcpy(intern_op->path, f0, LABELNAMSIZ);
 
 	return 0;
 }
@@ -771,6 +835,13 @@ static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
 	print_uint(PRINT_ANY, "regid", "\t    register id %u\n", oper->immedv);
 }
 
+static void print_label_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			     void *oppath, void *immedv_large, void *prefix, FILE *f)
+{
+	print_string(PRINT_ANY, "type", " type %s\n", "label");
+	print_string(PRINT_ANY, "label", " label %s\n", oppath);
+}
+
 static void print_operand_content(const char *ABC, struct action_util *au,
 				  struct p4tc_u_operand *oper, void *oppath,
 				  void *immedv_large, void *prefix, FILE *f)
@@ -842,25 +913,75 @@ static int populate_oper_path(struct action_util *a, char *fields[],
 	return 0;
 }
 
-static int parse_cmd_control(int *argc_p, char ***argv_p,
-			     struct p4tc_u_operate *op)
+static int extract_jump_label(int *argc_p, char ***argv_p, int *result,
+			      char **label)
 {
 	char **argv = *argv_p;
 	int argc = *argc_p;
 
+	if (action_a2n(*argv, result, false) < 0) {
+		fprintf(stderr, "Bad action type %s\n",
+			*argv);
+		return -1;
+	}
+
+	if (*result == TC_ACT_JUMP) {
+		if (NEXT_ARG_OK()) {
+			NEXT_ARG_FWD();
+			if (isalpha(**argv)) {
+				*label = calloc(1, strnlen(*argv, LABELNAMSIZ));
+				if (!*label) {
+					fprintf(stderr, "Unable to alloc label\n");
+					return -1;
+				}
+				strlcpy(*label, *argv, LABELNAMSIZ);
+				NEXT_ARG_FWD();
+				goto out;
+			}
+
+			PREV_ARG();
+		}
+	}
+
+	if (parse_action_control(&argc, &argv, result, false) < 0)
+		return -1;
+
+out:
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int parse_cmd_control(int *argc_p, char ***argv_p,
+			     struct p4tc_u_operate *op, char **label1,
+			     char **label2)
+{
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	int ret;
+
 	if (strcmp(*argv, "control") == 0) {
 		if (!NEXT_ARG_OK()) {
-			fprintf(stderr, "control needs an arguement\n");
+			fprintf(stderr, "control needs an argument\n");
 			return -1;
 		}
 		NEXT_ARG();
 
-		if (parse_action_control_slash(&argc, &argv,
-						(int *)&op->op_ctl1,
-						(int *)&op->op_ctl2,
-						false)) {
-			fprintf(stderr, "Failed to parse control\n");
-			return -1;
+		ret = extract_jump_label(&argc, &argv,
+					 (int *)&op->op_ctl1, label1);
+		if (ret < 0)
+			return ret;
+
+		if (argc) {
+			if (NEXT_ARG_OK() && strcmp(*argv, "/") == 0) {
+				NEXT_ARG();
+				ret = extract_jump_label(&argc, &argv,
+							 (int *)&op->op_ctl2,
+							 label2);
+				if (ret < 0)
+					return ret;
+			}
 		}
 	} else {
 		fprintf(stderr, "need keyword \"control\"\n");
@@ -948,8 +1069,10 @@ static int parse_act_operands(struct action_util *a, int *argc_p,
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
-		int rc = parse_cmd_control(&argc, &argv, op);
+		int rc;
 
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid act \"control\"\n");
 			return -1;
@@ -1007,7 +1130,8 @@ static int parse_set_operands(struct action_util *a, int *argc_p,
 	NEXT_ARG_FWD();
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
-		rc = parse_cmd_control(&argc, &argv, op);
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid set \"control\"\n");
 			return -1;
@@ -1080,7 +1204,8 @@ static int parse_brn_operands(struct action_util *a, int *argc_p,
 
 	NEXT_ARG_FWD();
 	if (strcmp(*argv, "control") == 0) {
-		rc = parse_cmd_control(&argc, &argv, op);
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid set \"control\"\n");
 			return rc;
@@ -1140,7 +1265,8 @@ static int parse_print_operands(struct action_util *a, int *argc_p,
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
 
-		rc = parse_cmd_control(&argc, &argv, op);
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid set \"control\"\n");
 			return -1;
@@ -1227,6 +1353,82 @@ static int parse_tblapp_operands(struct action_util *a, int *argc_p,
 	return 0;
 }
 
+static int parse_jump_operands(struct action_util *a, int *argc_p,
+			       char ***argv_p, struct p4tc_cmds_v *ins)
+{
+	char *Acomponents[MAX_PATH_COMPONENTS] = { };
+	int num_Acomponents = 0;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	char *argsA;
+	int rc;
+
+	argsA = strdupa(*argv);
+
+	num_Acomponents = parse_operand_path(argsA, Acomponents);
+	if (num_Acomponents < 1) {
+		fprintf(stderr, "Invalid operand A %s\n", *argv);
+		return -1;
+	}
+
+	PREV_ARG();
+	rc = get_jump_type(a, argc, argv, Acomponents,
+			   &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
+	}
+	NEXT_ARG_FWD();
+	NEXT_ARG_FWD();
+
+	*argc_p = argc;
+	*argv_p = argv;
+	return 0;
+}
+
+static int parse_label_operands(struct action_util *a, int *argc_p,
+			       char ***argv_p, struct p4tc_cmds_v *ins)
+{
+	struct p4tc_u_operand *A = &ins->opnds[P4TC_CMD_OPER_A].op;
+	char *Acomponents[MAX_PATH_COMPONENTS] = { };
+	int num_Acomponents = 0;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct opnd_type_s *o;
+	char *argsA;
+	int rc;
+
+	argsA = strdupa(*argv);
+
+	num_Acomponents = parse_operand_path(argsA, Acomponents);
+	if (num_Acomponents < 1) {
+		fprintf(stderr, "Invalid operand A %s\n", *argv);
+		return -1;
+	}
+
+	o = get_optype_byid(P4TC_OPER_LABEL);
+	if (!o) {
+		fprintf(stderr, "Invalid action datatype label\n");
+		return -1;
+	}
+	A->oper_type = o->id;
+
+	rc = o->get_opertype(a, (const char **)Acomponents,
+			     &ins->opnds[P4TC_CMD_OPER_A]);
+	if (rc < 0) {
+		fprintf(stderr, "XXX: Invalid operand A %s\n",
+			Acomponents[0]);
+		return -1;
+	}
+
+	NEXT_ARG_FWD();
+
+	*argc_p = argc;
+	*argv_p = argv;
+	return 0;
+}
+
 static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 				     char ***argv_p, struct p4tc_cmds_v *ins)
 {
@@ -1302,7 +1504,8 @@ static int parse_binarith_operands(struct action_util *a, int *argc_p,
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
 
-		rc = parse_cmd_control(&argc, &argv, op);
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid binarith \"control\"\n");
 			return -1;
@@ -1391,7 +1594,8 @@ static int parse_concat_operands(struct action_util *a, int *argc_p,
 	if (*argv && strcmp(*argv, "control") == 0) {
 		struct p4tc_u_operate *op = &ins->ins;
 
-		rc = parse_cmd_control(&argc, &argv, op);
+		rc = parse_cmd_control(&argc, &argv, op, &ins->label1,
+				       &ins->label2);
 		if (rc) {
 			fprintf(stderr, "Invalid binarith \"control\"\n");
 			return -1;
@@ -1718,7 +1922,38 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
 				fprintf(stderr, "bad p4tc_cmd <bxor>: %d:<%s>\n",
-		argc, *argv);
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "jump") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_JUMP;
+			op = get_op_byname("jump");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <jump>: %d:<%s>\n",
+					argc, *argv);
+			}
+			continue;
+		} else if (strcmp(*argv, "label") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_LABEL;
+			op = get_op_byname("label");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <label>: %d:<%s>\n",
+					argc, *argv);
 				return -1;
 			}
 			continue;
@@ -1770,6 +2005,13 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 
 		addattr_l(n, MAX_MSG, P4TC_CMD_OPERATION, &ins->ins,
 			  sizeof(struct p4tc_u_operate));
+
+		if (ins->label1)
+			addattrstrz(n, MAX_MSG, P4TC_CMD_OPER_LABEL1,
+				    ins->label1);
+		if (ins->label2)
+			addattrstrz(n, MAX_MSG, P4TC_CMD_OPER_LABEL2,
+				    ins->label2);
 
 		tailoper = addattr_nest(n, MAX_MSG,
 					     P4TC_CMD_OPER_LIST | NLA_F_NESTED);
