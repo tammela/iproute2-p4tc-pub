@@ -8,6 +8,7 @@
 #include "list.h"
 #include "tc_util.h"
 #include "p4_types.h"
+#include "p4_tc_json.h"
 
 #include <uapi/linux/p4tc.h>
 
