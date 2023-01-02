@@ -8,6 +8,7 @@
 #include "list.h"
 #include "tc_util.h"
 #include "p4_types.h"
+#include "p4_tc_json.h"
 
 #include <uapi/linux/p4tc.h>
 
@@ -109,7 +110,6 @@ struct p4_reg_s {
 	__u32 startbit;
 	__u32 endbit;
 };
-
 
 #define TABLEKEYNAMSIZ TEMPLATENAMSZ
 
