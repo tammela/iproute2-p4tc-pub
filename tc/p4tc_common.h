@@ -1,0 +1,178 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _P4TC_COMMON_H_
+#define _P4TC_COMMON_H_
+
+#include <stdio.h>
+#include <string.h>
+
+#include "list.h"
+#include "tc_util.h"
+#include "p4_types.h"
+
+#include <uapi/linux/p4tc.h>
+#include <linux/rtnetlink.h>
+
+#ifndef INTROSPECTION_PATH
+#define INTROSPECTION_PATH "/etc/iproute2/introspection"
+#endif
+
+#define TMPL_ARRAY_START_IDX 1
+#define PATH_OBJ_IDX 0
+#define PATH_PNAME_IDX 1
+#define PATH_CBNAME_IDX 2
+#define PATH_MNAME_IDX 3
+#define PATH_TBLNAME_IDX 3
+#define PATH_ANAME_IDX 3
+#define PATH_PIPEANAME_IDX 3
+#define PATH_TBLANAME_IDX 4
+#define PATH_REGNAME_IDX 2
+#define PATH_EXTNAME_IDX 2
+#define PATH_EXTINSTNAME_IDX 3
+#define PATH_RUNTIME_EXTNAME_IDX 2
+#define PATH_RUNTIME_EXTINSTNAME_IDX 3
+#define PATH_TABLE_OBJ_IDX 1
+#define PATH_TABLE_PNAME_IDX 0
+#define PATH_RUNTIME_EXT_PNAME_IDX PATH_TABLE_PNAME_IDX
+
+#define PATH_PARSERNAME_IDX 2
+#define PATH_HDRNAME_IDX 3
+#define PATH_HDRFIELDNAME_IDX 4
+
+#define MAX_PATH_COMPONENTS 5
+
+#define STR_IS_EMPTY(str) ((str)[0] == '\0')
+
+/* PATH SYNTAX: tc p4template objtype/pname/...  */
+static inline int parse_path(char *path, char **p4tcpath, const char *separator)
+{
+	int i = 0;
+	char *component;
+
+	component = strtok(path, separator);
+	while (component) {
+		if (i == MAX_PATH_COMPONENTS) {
+			fprintf(stderr, "Max path components exceeded");
+			return -1;
+		}
+
+		p4tcpath[i++] = component;
+		component = strtok(NULL, separator);
+	}
+
+	return i;
+}
+
+static inline int get_obj_type(const char *str_obj_type)
+{
+       if (!strcmp(str_obj_type, "pipeline"))
+               return P4TC_OBJ_PIPELINE;
+       else if (!strcmp(str_obj_type, "table"))
+               return P4TC_OBJ_TABLE;
+       else if (!strcmp(str_obj_type, "hdrfield"))
+               return P4TC_OBJ_HDR_FIELD;
+       else if (!strcmp(str_obj_type, "action"))
+               return P4TC_OBJ_ACT;
+       else if (!strcmp(str_obj_type, "extern"))
+               return P4TC_OBJ_EXT;
+       else if (!strcmp(str_obj_type, "extern_inst"))
+               return P4TC_OBJ_EXT_INST;
+
+       return -1;
+}
+
+static inline int get_obj_runtime_type(const char *str_obj_type)
+{
+       if (!strcmp(str_obj_type, "table"))
+               return P4TC_OBJ_RUNTIME_TABLE;
+       else if (!strcmp(str_obj_type, "extern"))
+               return P4TC_OBJ_RUNTIME_EXTERN;
+
+       return -1;
+}
+
+static inline int concat_cb_name(char *full_name, const char *cbname,
+			   const char *objname, size_t sz)
+{
+	return snprintf(full_name, sz, "%s/%s", cbname, objname) >= sz ? -1 : 0;
+}
+
+static inline int try_strncpy(char *dest, const char *src, size_t max_len)
+{
+	if (strnlen(src, max_len) == max_len)
+		return -1;
+
+	strcpy(dest, src);
+
+	return 0;
+}
+
+static inline bool p4tc_is_tmpl_cmd(__u16 nlmsg_type) {
+	return (nlmsg_type == RTM_CREATEP4TEMPLATE ||
+		nlmsg_type == RTM_UPDATEP4TEMPLATE ||
+		nlmsg_type == RTM_GETP4TEMPLATE ||
+		nlmsg_type == RTM_DELP4TEMPLATE);
+}
+
+static inline bool p4tc_is_runtime_cmd(__u16 nlmsg_type) {
+	return (nlmsg_type == RTM_P4TC_CREATE ||
+		nlmsg_type == RTM_P4TC_UPDATE  ||
+		nlmsg_type == RTM_P4TC_GET ||
+		nlmsg_type == RTM_P4TC_DEL);
+}
+
+struct p4_metat_s {
+        __u32 id;
+        int containid;
+	__u8 startbit;
+	__u8 endbit;
+        char name[256];
+	__u32 pipeid;
+	struct hlist_node hlist;
+	char pname[256];
+};
+
+struct p4_param_s {
+	__u32 id;
+	__u32 pipeid;
+	char pname[256];
+        char name[256];
+	int containid;
+	__u8 startbit;
+	__u8 endbit;
+};
+
+#define TABLEKEYNAMSIZ TEMPLATENAMSZ
+
+struct parse_state {
+	bool has_parsed_keys;
+	int num_keys;
+	__u8 keyblob[P4TC_MAX_KEYSZ];
+	__u8 maskblob[P4TC_MAX_KEYSZ];
+};
+
+int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+                         struct parse_state *state, char *p4tcpath[],
+                         const char *pname, __u32 *ids, __u32 *offset);
+int print_table(struct nlmsghdr *n, void *arg);
+int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
+			   char *p4tcpath[], struct nlmsghdr *n,
+			   unsigned int *flags);
+
+int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
+		       int *argc_p, char ***argv_p, const char **p4tcpath);
+int p4tc_extern_parse_param(int *argc_p, char ***argv_p, bool in_act,
+			    int *parms_count, struct nlmsghdr *n);
+int p4tc_extern_parse_inst_param(int *argc_p, char ***argv_p, bool in_act,
+				 int *parms_count,
+				 struct extern_insts_list *inst,
+				 struct nlmsghdr *n);
+
+int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
+			   const char *suffix, FILE *f);
+int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
+		      const char *prefix, struct table *table, __u32 tbl_id);
+int p4tc_extern_print_params(struct rtattr *arg, FILE *f);
+int p4tc_extern_inst_print_params(struct rtattr *arg, FILE *f);
+int print_extern(struct nlmsghdr *n, void *arg);
+
+#endif
