@@ -487,34 +487,21 @@ static int print_hdrfield(struct rtattr *tb, __u32 parser_id,
 	return 0;
 }
 
-static int print_p4_key(struct rtattr *tb, void *arg)
+static int print_p4_key(struct rtattr *nla, void *arg)
 {
 	FILE *fp = (FILE *)arg;
-	struct rtattr *tb_nest[P4TC_MAXPARSE_KEYS + 1];
-	int i;
+	struct rtattr *tb_key[P4TC_TKEY_MAX + 1];
 
-	parse_rtattr_nested(tb_nest, P4TC_MAXPARSE_KEYS, tb);
+	open_json_object("key");
+	parse_rtattr_nested(tb_key, P4TC_TKEY_MAX, nla);
 
-	for (i = 1; i < P4TC_MAXPARSE_KEYS + 1 && tb_nest[i]; i++) {
-		struct rtattr *tb_key[P4TC_MAXPARSE_KEYS + 1];
-
-		open_json_object(NULL);
-		parse_rtattr_nested(tb_key, P4TC_MAXPARSE_KEYS, tb_nest[i]);
-
-		if (tb_key[P4TC_KEY_ID]) {
-			const __u32 *id = RTA_DATA(tb_key[P4TC_KEY_ID]);
-
-			print_uint(PRINT_ANY, "id", "    Key ID %u\n", *id);
-		}
-
-		print_string(PRINT_FP, NULL, "    Key Action:\n", NULL);
-		if (tb_key[P4TC_KEY_ACT]) {
-			print_nl();
-			tc_print_action(fp, tb_key[P4TC_KEY_ACT], 0);
-		}
+	print_string(PRINT_FP, NULL, "    Key Action:\n", NULL);
+	if (tb_key[P4TC_KEY_ACT]) {
 		print_nl();
-		close_json_object();
+		tc_print_action(fp, tb_key[P4TC_KEY_ACT], 0);
 	}
+	print_nl();
+	close_json_object();
 	print_nl();
 
 	return 0;
@@ -628,8 +615,6 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			   parm->tbl_max_entries);
 		print_uint(PRINT_ANY, "masks", "    masks %u\n",
 			   parm->tbl_max_masks);
-		print_uint(PRINT_ANY, "default_key", "    default key %u\n",
-			   parm->tbl_default_key);
 		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
 			   parm->tbl_num_entries);
 		p4tc_print_permissions("    ", &parm->tbl_permissions, f);
@@ -637,11 +622,8 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 		print_nl();
 	}
 
-	if (tb[P4TC_TABLE_KEYS]) {
-		open_json_array(PRINT_JSON, "keys");
-		print_p4_key(tb[P4TC_TABLE_KEYS], arg);
-		close_json_array(PRINT_JSON, NULL);
-	}
+	if (tb[P4TC_TABLE_KEY])
+		print_p4_key(tb[P4TC_TABLE_KEY], tb[P4TC_TABLE_KEY]);
 
 	if (tb[P4TC_TABLE_PREACTIONS]) {
 		print_string(PRINT_FP, NULL,
@@ -1505,10 +1487,8 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	return pipeid;
 }
 
-static int parse_table_key(struct nlmsghdr *n, int current_key,
-			   bool *is_default, int *argc_p, char ***argv_p)
+static int parse_table_key(struct nlmsghdr *n,  int *argc_p, char ***argv_p)
 {
-	struct rtattr *tail;
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	int ret = 0;
@@ -1516,34 +1496,19 @@ static int parse_table_key(struct nlmsghdr *n, int current_key,
 	argc -= 1;
 	argv += 1;
 
-	tail = addattr_nest(n, MAX_MSG, (current_key + 1) | NLA_F_NESTED);
 	while (argc > 0) {
-		if (strcmp(*argv, "id") == 0) {
-			__u32 id;
-
-			NEXT_ARG();
-			if (get_u32(&id, *argv, 10) < 0) {
-				ret = -1;
-				goto out;
-			}
-			addattr32(n, MAX_MSG, P4TC_KEY_ID, id);
-		} else if (strcmp(*argv, "default") == 0) {
-			*is_default = true;
-		} else if (matches(*argv, "action") == 0) {
+		if (matches(*argv, "action") == 0) {
 			if (parse_action(&argc, &argv, P4TC_KEY_ACT | NLA_F_NESTED, n)) {
 				fprintf(stderr, "Illegal action\n");
 				return -1;
 			}
 			continue;
-		} else if (strcmp(*argv, "keys") == 0) {
-			ret = 1;
-			goto close_nested;
 		} else if (strcmp(*argv, "postactions") == 0) {
 			ret = 0;
-			goto close_nested;
+			goto out;
 		} else if (strcmp(*argv, "preactions") == 0) {
 			ret = 0;
-			goto close_nested;
+			goto out;
 		} else {
 			ret = -1;
 			goto out;
@@ -1551,9 +1516,6 @@ static int parse_table_key(struct nlmsghdr *n, int current_key,
 		argv++;
 		argc--;
 	}
-
-close_nested:
-	addattr_nest_end(n, tail);
 
 out:
 	*argc_p = argc;
@@ -1604,13 +1566,11 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	struct rtattr *tail2 = NULL;
 	struct rtattr *tail = NULL;
 	char **argv = *argv_p;
-	int current_key = 0;
 	int argc = *argc_p;
 	__u32 tbl_id = 0;
 	__u32 pipeid = 0;
 	int ret = 0;
 	char *pname, *cbname, *tblname;
-	bool is_default;
 
 	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
@@ -1631,7 +1591,6 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	}
 
 	while (argc > 0) {
-		is_default = false;
 		if (cmd == RTM_NEWP4TEMPLATE) {
 			if (strcmp(*argv, "tblid") == 0) {
 				NEXT_ARG();
@@ -1658,34 +1617,17 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				if (get_u32(&table.tbl_max_masks, *argv, 10) < 0)
 					return -1;
 				table.tbl_flags |= P4TC_TABLE_FLAGS_MAX_MASKS;
-			} else if (strcmp(*argv, "keys") == 0) {
-				if (!tail2) {
-					tail2 = addattr_nest(n, MAX_MSG,
-							     P4TC_TABLE_KEYS | NLA_F_NESTED);
-				}
-				ret = parse_table_key(n, current_key,
-						      &is_default, &argc,
-						      &argv);
-
-				if ((table.tbl_flags & P4TC_TABLE_FLAGS_DEFAULT_KEY) &&
-				    is_default) {
+			} else if (strcmp(*argv, "key") == 0) {
+				if (tail2) {
 					fprintf(stderr,
-						"Unable to set default key twice");
+						"Can't specify table key twitce\n");
 					return -1;
 				}
-
-				current_key++;
-
-				if (is_default) {
-					table.tbl_default_key = current_key;
-					table.tbl_flags |= P4TC_TABLE_FLAGS_DEFAULT_KEY;
-				}
-
+				tail2 = addattr_nest(n, MAX_MSG,
+						     P4TC_TABLE_KEY | NLA_F_NESTED);
+				ret = parse_table_key(n, &argc, &argv);
 				if (ret < 0)
 					goto out;
-				/* More table keys to go*/
-				else if (ret == 1)
-					continue;
 				else {
 					addattr_nest_end(n, tail2);
 					continue;
