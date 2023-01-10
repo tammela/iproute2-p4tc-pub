@@ -576,16 +576,6 @@ int get_key_type(struct action_util *a, const char *op_components[],
 		 struct p4tc_u_internal_operand *intern_op)
 {
 	const char *f2 = op_components[2];
-	struct p4tc_u_operand *op = &intern_op->op;
-	const char *keyid_s = op_components[3];
-	__u32 key_id;
-
-	if (get_u32(&key_id, keyid_s, 0)) {
-		fprintf(stderr, "Invalid key id %u\n", key_id);
-		return -1;
-	}
-
-	op->immedv2 = key_id;
 
 	intern_op->path = calloc(1, strnlen(f2, TABLENAMSIZ) + 1);
 	if (!intern_op->path)
