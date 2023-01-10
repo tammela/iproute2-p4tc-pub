@@ -103,7 +103,7 @@ static int parse_p4t_be16_val(struct p4_type_value *val, const char *arg,
 		}
 	}
 
-	*newval = htons(ival);
+	*newval = ival;
 	return 0;
 }
 
@@ -200,7 +200,27 @@ static int parse_p4t_be32_val(struct p4_type_value *val, const char *arg,
 		}
 	}
 
-	*newval = htonl(ival);
+	*newval = ival;
+	return 0;
+}
+
+static int parse_p4t_be64_val(struct p4_type_value *val, const char *arg,
+			      int base)
+{
+	__be64 *newval = val->value;
+	__be64 ival;
+
+	if (get_be64(&ival, arg, base))
+		return -1;
+
+	if (val->bitsz < 64) {
+		if (ival > (1 << val->bitsz) - 1) {
+			fprintf(stderr, "Value doesn't fit in bitsz\n");
+			return -1;
+		}
+	}
+
+	*newval = ival;
 	return 0;
 }
 
@@ -284,7 +304,7 @@ static void print_p4t_be16_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, *ival);
+	print_uint(PRINT_ANY, name, buf, htons(*ival));
 }
 
 static void print_p4t_u32_val(const char *name, struct p4_type_value *val,
@@ -335,7 +355,6 @@ static void print_p4t_be32_val(const char *name, struct p4_type_value *val,
 	print_uint(PRINT_ANY, name, buf, ntohl(*ival));
 }
 
-
 static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
 {
@@ -347,6 +366,19 @@ static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
 
 	print_uint(PRINT_ANY, name, buf, *ival);
 }
+
+static void print_p4t_be64_val(const char *name, struct p4_type_value *val,
+			       FILE *f)
+{
+	__be64 *ival = val->value;
+	SPRINT_BUF(buf);
+
+	strlcpy(buf, name, SPRINT_BSIZE);
+	strncat(buf, " %u", SPRINT_BSIZE);
+
+	print_uint(PRINT_ANY, name, buf, ntohll(*ival));
+}
+
 
 static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
 			      FILE *f)
@@ -559,6 +591,18 @@ static struct p4_type_s u64_typ = {
 	.name = "bit64",
 	.flags = P4T_TYPE_UNSIGNED,
 };
+
+static struct p4_type_s be64_typ = {
+	.containid = P4T_BE64,
+	.bitsz = 64,
+	.startbit = 0,
+	.endbit = 63,
+	.parse_p4t = parse_p4t_be64_val,
+	.print_p4t = print_p4t_be64_val,
+	.name = "be64",
+	.flags = P4T_TYPE_BIGENDIAN,
+};
+
 static struct p4_type_s u128_typ = {
 	.containid = P4T_U128,
 	.parse_p4t = NULL,
@@ -701,6 +745,7 @@ void register_p4_types(void)
 	hlist_add_head(&s128_typ.hlist, &types_list);
 	hlist_add_head(&be16_typ.hlist, &types_list);
 	hlist_add_head(&be32_typ.hlist, &types_list);
+	hlist_add_head(&be64_typ.hlist, &types_list);
 	hlist_add_head(&string_typ.hlist, &types_list);
 	hlist_add_head(&nulstring_typ.hlist, &types_list);
 	hlist_add_head(&mac_typ.hlist, &types_list);
