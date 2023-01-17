@@ -118,7 +118,6 @@ void register_kernel_metadata(void);
 void unregister_kernel_metadata(void);
 void register_new_metadata(struct p4_metat_s *meta);
 void unregister_metadata(struct p4_metat_s *meta);
-int fill_user_metadata(struct p4_metat_s metadata[]);
 
 #define TABLEKEYNAMSIZ TEMPLATENAMSZ
 
