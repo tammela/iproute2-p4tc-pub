@@ -508,7 +508,7 @@ static int print_p4_key(struct rtattr *nla, void *arg)
 }
 
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
-			   FILE *f)
+			   const char *suffix, FILE *f)
 {
 	char permissions[11] = {0};
 	int i_str;
@@ -565,7 +565,8 @@ int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 	}
 
 	print_string(PRINT_FP, NULL, "%s", prefix);
-	print_string(PRINT_ANY, "permissions", "permissions %s\n", permissions);
+	print_string(PRINT_ANY, "permissions", "permissions %s", permissions);
+	print_string(PRINT_FP, NULL, "%s", suffix);
 
 	return 0;
 }
@@ -582,20 +583,24 @@ static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
 		__u16 *permissions;
 
 		permissions = RTA_DATA(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
-		p4tc_print_permissions("", permissions, f);
+		p4tc_print_permissions("", permissions, "\n", f);
 	}
 
 	return 0;
 }
 
-static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
-			    __u32 tbl_id, FILE *f)
+static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			    struct rtattr *arg, __u32 tbl_id, FILE *f)
 {
+	struct table *table = NULL;
 	struct rtattr *tb[P4TC_TABLE_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_TABLE_MAX, arg);
 
 	if (tbl_id) {
+		if (pipe)
+			table = p4tc_find_table_byid(pipe, tbl_id);
+
 		print_uint(PRINT_ANY, "tblid", "    table id %u", tbl_id);
 		print_nl();
 	}
@@ -617,7 +622,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			   parm->tbl_max_masks);
 		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
 			   parm->tbl_num_entries);
-		p4tc_print_permissions("    ", &parm->tbl_permissions, f);
+		p4tc_print_permissions("    ", &parm->tbl_permissions, "\n", f);
 
 		print_nl();
 	}
@@ -674,7 +679,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			open_json_object("entry");
 			print_nl();
 			print_table_entry(n, tb_nest[P4TC_PARAMS], f,
-					  "        ", tbl_id);
+					  "        ", table, tbl_id);
 			close_json_object();
 		}
 	}
@@ -936,9 +941,11 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 		else {
 			if (tb[P4TC_PATH]) {
 				ids = RTA_DATA(tb[P4TC_PATH]);
-				p4tc_print_table(n, tb[P4TC_PARAMS], ids[0], f);
+				p4tc_print_table(n, pipe, tb[P4TC_PARAMS],
+						 ids[0], f);
 			} else {
-				p4tc_print_table(n, tb[P4TC_PARAMS], 0, f);
+				p4tc_print_table(n, pipe, tb[P4TC_PARAMS], 0,
+						 f);
 			}
 		}
 		break;

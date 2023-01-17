@@ -8,6 +8,7 @@
 #include "list.h"
 #include "tc_util.h"
 #include "p4_types.h"
+#include "p4_tc_json.h"
 
 #include <uapi/linux/p4tc.h>
 
@@ -141,7 +142,7 @@ int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
                          const char *pname, __u32 *ids, __u32 *offset);
 
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
-                          FILE *f);
+			   const char *suffix, FILE *f);
 int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
                      const char *prefix, __u32 tbl_id);
 
