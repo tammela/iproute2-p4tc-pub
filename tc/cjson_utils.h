@@ -9,6 +9,7 @@
 int cjson_get_string(cJSON *cjson, char *key, char **val);
 int cjson_get_optional_string(cJSON *cjson, char *key, char **val);
 int cjson_get_object(cJSON *cjson, char *key, cJSON **val);
+int cjson_get_optional_object(cJSON *cjson, char *key, cJSON **val);
 int cjson_get_int(cJSON *cjson, char *key, int *val);
 int cjson_get_bool(cJSON *cjson, char *key, bool *val);
 int cjson_get_optional_bool(cJSON *cjson, char *key, bool *val);

@@ -8,6 +8,7 @@
 #include "list.h"
 #include "tc_util.h"
 #include "p4_types.h"
+#include "p4tc_json.h"
 
 #include <uapi/linux/p4tc.h>
 #include <linux/rtnetlink.h>
@@ -159,6 +160,11 @@ struct p4tc_act_param {
 int dyna_add_param(struct p4tc_act_param *param, void *value, bool in_act,
 		   struct nlmsghdr *n, bool convert_value);
 
+int
+p4tc_act_param_build(struct p4tc_json_actions_list *act,
+		     struct p4tc_act_param *param, const char *param_name,
+		     bool fail_introspection);
+
 #ifdef P4TC
 int do_p4_runtime(int argc, char **argv);
 int print_p4ctrl(struct nlmsghdr *n, void *arg);
@@ -192,9 +198,16 @@ int parse_table_default_action(int *argc_p, char ***argv_p,
 int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
 		       int *argc_p, char ***argv_p, const char **p4tcpath);
 int parse_extern_help(int cmd, char **p4tcpath);
+int p4tc_extern_parse_inst_param(int *argc_p, char ***argv_p, bool in_act,
+				 int *parms_count,
+				 struct p4tc_json_extern_insts_list *inst,
+				 struct nlmsghdr *n);
 
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 			   const char *suffix, FILE *f);
+int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
+		      const char *prefix, struct p4tc_json_table *table,
+		      __u32 tbl_id);
 int p4tc_extern_inst_print_params(struct rtattr *arg, FILE *f);
 int print_extern(struct nlmsghdr *n, void *arg);
 int p4tc_print_one_extern(FILE *f, struct rtattr *arg, bool bind);
