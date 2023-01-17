@@ -907,8 +907,9 @@ static int print_pipeline_dump_1(struct nlmsghdr *n, struct rtattr *arg, FILE *f
 	return 0;
 }
 
-static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
-			  struct p4tcmsg *t, FILE *f)
+static int print_p4tmpl_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			  __u16 cmd, struct rtattr *arg, struct p4tcmsg *t,
+			  FILE *f)
 {
 	struct rtattr *tb[P4TC_MAX + 1];
 	__u32 obj = t->obj;
@@ -990,9 +991,9 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 
 #define TMPL_ARRAY_IS_EMPTY(tb) (!(tb[TMPL_ARRAY_START_IDX]))
 
-static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
-			      struct rtattr *nest,
-			      struct p4tcmsg *t, void *arg)
+static int print_p4tmpl_array(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			      __u16 cmd, struct rtattr *nest, struct p4tcmsg *t,
+			      void *arg)
 {
 	int ret = 0;
 	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
@@ -1005,7 +1006,7 @@ static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
 	open_json_array(PRINT_JSON, "templates");
 	for (i = TMPL_ARRAY_START_IDX; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		open_json_object(NULL);
-		print_p4tmpl_1(n, cmd, tb[i], t, (FILE *)arg);
+		print_p4tmpl_1(n, pipe, cmd, tb[i], t, (FILE *)arg);
 		close_json_object();
 	}
 	close_json_array(PRINT_JSON, NULL);
@@ -1015,6 +1016,7 @@ static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
 
 int print_p4tmpl(struct nlmsghdr *n, void *arg)
 {
+	struct p4_tc_pipeline *pipe = NULL;
 	struct rtattr *tb[P4TC_ROOT_MAX + 1];
 	struct p4tcmsg *t = NLMSG_DATA(n);
 	int len;
@@ -1064,8 +1066,11 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
-		print_string(PRINT_ANY, "pname", "pipeline name %s",
-			     RTA_DATA(tb[P4TC_ROOT_PNAME]));
+		char *pname = RTA_DATA(tb[P4TC_ROOT_PNAME]);
+
+		pipe = p4_tc_import_json(pname);
+
+		print_string(PRINT_ANY, "pname", "pipeline name %s", pname);
 		print_nl();
 	}
 
@@ -1077,7 +1082,8 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 
 	if (tb[P4TC_ROOT]) {
 		open_json_object(NULL);
-		print_p4tmpl_array(n, n->nlmsg_type, tb[P4TC_ROOT], t, arg);
+		print_p4tmpl_array(n, pipe, n->nlmsg_type, tb[P4TC_ROOT], t,
+				   arg);
 		close_json_object();
 	}
 
