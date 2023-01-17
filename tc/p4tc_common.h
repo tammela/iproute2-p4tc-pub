@@ -93,6 +93,7 @@ struct p4_metat_s {
 
 struct p4_param_s {
 	__u32 id;
+	__u32 actid;
 	__u32 pipeid;
 	char pname[256];
         char name[256];

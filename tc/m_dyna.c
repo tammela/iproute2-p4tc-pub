@@ -332,7 +332,7 @@ static int print_dyna_parm_value(FILE *f, struct action_util *au,
 		val.value = value;
 		val.mask = mask;
 		if (t->print_p4t)
-			t->print_p4t("raw value", &val, f);
+			t->print_p4t(" value:", &val, f);
 	}
 
 	return 0;
@@ -352,6 +352,13 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 		print_string(PRINT_ANY, "name", "\t  %s ", name);
 	}
 
+	if (tb[P4TC_ACT_PARAMS_ID]) {
+		__u32 *id;
+
+		id = RTA_DATA(tb[P4TC_ACT_PARAMS_ID]);
+		print_uint(PRINT_ANY, "id", " id %u ", *id);
+	}
+
 	if (tb[P4TC_ACT_PARAMS_TYPE]) {
 		__u32 contain_id;
 
@@ -362,7 +369,7 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 			return -1;
 		}
 
-		print_string(PRINT_ANY, "type", "type %s ", t->name);
+		print_string(PRINT_ANY, "type", "type %s", t->name);
 	} else {
 		fprintf(stderr, "Must specify params type");
 		return -1;
@@ -371,13 +378,6 @@ static int print_dyna_parm(FILE *f, struct action_util *au, struct rtattr *arg)
 	if (tb[P4TC_ACT_PARAMS_VALUE]) {
 		print_dyna_parm_value(f, au, t, tb[P4TC_ACT_PARAMS_VALUE],
 				      RTA_DATA(tb[P4TC_ACT_PARAMS_MASK]));
-	}
-
-	if (tb[P4TC_ACT_PARAMS_ID]) {
-		__u32 *id;
-
-		id = RTA_DATA(tb[P4TC_ACT_PARAMS_ID]);
-		print_uint(PRINT_ANY, "id", " id %u\n", *id);
 	}
 
 	return 0;
