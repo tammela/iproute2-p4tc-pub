@@ -49,6 +49,18 @@ int cjson_get_object(cJSON *cjson, char *key, cJSON **val)
 	return 0;
 }
 
+int cjson_get_optional_object(cJSON *cjson, char *key, cJSON **val)
+{
+	cJSON *tmp = cJSON_GetObjectItem(cjson, key);
+
+	if (tmp == NULL || tmp->type == cJSON_NULL)
+		return -1;
+
+	*val = tmp;
+	return 0;
+}
+
+
 int cjson_get_int(cJSON *cjson, char *key, int *val)
 {
 	cJSON *tmp = cJSON_GetObjectItem(cjson, key);
