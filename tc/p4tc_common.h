@@ -121,16 +121,7 @@ int fill_user_metadata(struct p4_metat_s metadata[]);
 
 #define TABLEKEYNAMSIZ TEMPLATENAMSZ
 
-struct tkey {
-	char name[TABLEKEYNAMSIZ];
-	__u8 value[P4TC_MAX_KEYSZ];
-	__u8 mask[P4TC_MAX_KEYSZ];
-	struct p4_type_s *type;
-	__u32 key_id;
-};
-
 struct parse_state {
-	struct tkey keys[P4TC_MAXPARSE_KEYS];
 	bool has_parsed_keys;
 	int num_keys;
 	__u8 keyblob[P4TC_MAX_KEYSZ];
@@ -144,6 +135,6 @@ int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 			   const char *suffix, FILE *f);
 int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
-                     const char *prefix, __u32 tbl_id);
+		      const char *prefix, struct table *table, __u32 tbl_id);
 
 #endif

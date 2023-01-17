@@ -19,11 +19,4 @@ struct mask_ops { int (*parse)(struct parse_state *state, __u32 *offset,
 };
 
 int str_to_type(const char *type_str);
-struct tkey *p4tc_find_table_key(struct tkey keys[], const char *key_name,
-				 __u32 num_keys);
-int p4tc_get_table_keys(struct tkey keys[], const char *pname,
-			const char *tname, const __u32 tbl_id);
-
-int p4tc_get_tables(const char *pname, const char *tname, __u32 *pipeid,
-		    __u32 *tbcid);
 #endif
