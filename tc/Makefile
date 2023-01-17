@@ -18,6 +18,8 @@ HAVE_P4TC_LIBBPF := $(shell echo $$((( $(LIBBPF_VERSION_MAJOR) * 10000 + $(LIBBP
 
 ifeq ($(HAVE_P4TC_LIBBPF),1)
   P4OBJ += p4_types.o
+  P4OBJ += cJSON.o
+  P4OBJ += cjson_utils.o
   CFLAGS += -DP4TC
 endif
 
