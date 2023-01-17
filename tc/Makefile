@@ -20,6 +20,7 @@ ifeq ($(HAVE_P4TC_LIBBPF),1)
   P4OBJ += p4_types.o
   P4OBJ += cJSON.o
   P4OBJ += cjson_utils.o
+  P4OBJ += p4tc_json.o
   CFLAGS += -DP4TC
 endif
 
