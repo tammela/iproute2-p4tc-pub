@@ -51,7 +51,7 @@ static inline int count_consecutive_bits(unsigned int *mem, size_t len,
 {
 	int cnt = 0, i;
 
-	for (i = 0; i < len * BITS_IN_BYTE; i++) {
+	for (i = 0; i < len * 8; i++) {
 		if (kparsertestbit(mem, i)) {
 			cnt++;
 			continue;
@@ -576,7 +576,7 @@ static const struct kparser_arg_key_val_token md_key_vals[] = {
 	KPARSER_ARG_BOOL("host-order-conversion", md_conf.e_bit, false,
 			"set if host byte order conversion is needed before"
 			" writing to user data"),
-	KPARSER_ARG_U(8, "constantvalue", md_conf.constant_value, 0, 0xff, 0,
+	KPARSER_ARG_U(16, "constantvalue", md_conf.constant_value, 0, 0xffff, 0,
 			"associated constant value"),
 	KPARSER_ARG_U(64, "hdr-src-off", md_conf.soff, 0, 0xffffffff, 0,
 			"start offset"),
@@ -829,9 +829,9 @@ static const struct kparser_arg_key_val_token parse_node_key_vals[] = {
 		      PLAIN_NODE.proto_node.ops.pfnext_proto.size,
 		      0, 0xff, 0,
 		      "size of the next protocol identifier field"),
-	KPARSER_ARG_U_HEX(16, "nxt.mask",
+	KPARSER_ARG_U_HEX(32, "nxt.mask",
 			  PLAIN_NODE.proto_node.ops.pfnext_proto.mask,
-			  0, KPARSER_DEFAULT_U16_MASK, KPARSER_DEFAULT_U16_MASK,
+			  0, KPARSER_DEFAULT_U32_MASK, KPARSER_DEFAULT_U32_MASK,
 			  "mask to extract the next protocol identifier"),
 	KPARSER_ARG_U(8, "nxt.rightshift",
 		      PLAIN_NODE.proto_node.ops.pfnext_proto.right_shift,
@@ -1334,6 +1334,25 @@ flag_field_proto_table_key_vals[] = {
 			 " to the associated flagsnode object"),
 };
 
+static const struct kparser_arg_set parser_flags[] = {
+	{
+		.set_value_str = "all-debug-logs-disabled",
+		.set_value_enum = 0,
+	},
+	{
+		.set_value_str = "enable-datapath-debug-logs",
+		.set_value_enum = KPARSER_F_DEBUG_DATAPATH,
+	},
+	{
+		.set_value_str = "enable-cli-debug-logs",
+		.set_value_enum = KPARSER_F_DEBUG_DATAPATH | KPARSER_F_DEBUG_CLI,
+	},
+	{
+		.set_value_str = "enable-all-debug-logs",
+		.set_value_enum = KPARSER_F_DEBUG_DATAPATH | KPARSER_F_DEBUG_CLI,
+	},
+};
+
 static const struct kparser_arg_key_val_token parser_key_vals[] = {
 	[0] {
 		.default_template_token = &hkey_name,
@@ -1353,8 +1372,19 @@ static const struct kparser_arg_key_val_token parser_key_vals[] = {
 		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
 				parser_conf.key.id),
 	},
-	KPARSER_ARG_U(16, "flags", parser_conf.config.flags, 0, 0xffff, 0,
-		      "debug and other flags for future usage"),
+	{
+		.type = KPARSER_ARG_VAL_SET,
+		.key_name = "flags",
+		.value_set_len = ARRAY_SIZE(parser_flags),
+		.value_set = parser_flags,
+		.str_arg_len_max = KPARSER_SET_VAL_LEN_MAX,
+		.def_value_enum = 0,
+		.w_offset = offsetof(struct kparser_conf_cmd,
+				parser_conf.config.flags),
+		.w_len = sizeof(((struct kparser_conf_cmd *) NULL)->
+				parser_conf.config.flags),
+		.help_msg = "debug and other flags for future usage",
+	},
 	KPARSER_ARG_U(16, "maxnodes", parser_conf.config.max_nodes,
 		      0, 0xffff, KPARSER_MAX_NODES,
 		      "Max number of protocol layers/nodes allowed during parsing"),
@@ -2416,9 +2446,9 @@ static inline int node_do_cli_metalist(int nsid,
 	if (op != op_create)
 		return 0;
 
-	currargidx = check_key(argc, argv, "md-rule");
+	currargidx = check_key(argc, argv, "md.rule");
 	if (currargidx == -1) {
-		currargidx = check_key(argc, argv, "md-rule-id");
+		currargidx = check_key(argc, argv, "md.rule-id");
 		if (currargidx == -1)
 			return 0;
 	}
