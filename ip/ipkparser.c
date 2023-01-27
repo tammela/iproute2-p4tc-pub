@@ -147,7 +147,7 @@ static int genl_family = -1;
 	GENL_REQUEST(_req, _bufsiz, genl_family, 0,			\
 		     KPARSER_GENL_VERSION, _cmd, _flags)
 
-#define KPARSER_NLM_MAX_LEN 8192
+#define KPARSER_NLM_MAX_LEN 1048576 // 1MB
 
 typedef void usage_handler(FILE *stream, bool intro, int argc, int *argidx,
 		char **argv, bool dump_ops, bool dump_objects);
@@ -417,8 +417,8 @@ static void dump_an_obj(const struct kparser_global_namespaces *namespace,
 				    strcmp(curr_arg->value_set[j].set_value_str,
 					   "false") == 0)
 					print_bool(PRINT_ANY, key, "",
-						   strcmp(curr_arg->value_set[j].set_value_str,
-							  "false") == 0);
+						   curr_arg->value_set[j].set_value_enum
+						   != 0);
 				else
 					print_string(PRINT_ANY, key, "", (char *)
 						     curr_arg->value_set[j].set_value_str);
@@ -536,7 +536,10 @@ static void dump_cmd_rsp(const struct kparser_global_namespaces *namespace,
 	open_json_object(NULL);
 	open_json_object("execsummary");
 	print_0xhex(PRINT_ANY, "opretcode", "", rsp->op_ret_code);
-	print_string(PRINT_ANY, "opdesc", "", (char *) rsp->err_str_buf);
+	if (rsp->op_ret_code == 0)
+		print_string(PRINT_ANY, "opdesc", "", "Operation success");
+	else
+		print_string(PRINT_ANY, "opdesc", "", "Operation failed");
 	if (rsp->op_ret_code == 0)
 		print_hex(PRINT_ANY, "objectscounttotal", "%d",
 				rsp->objects_len + 1);
