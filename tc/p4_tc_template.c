@@ -589,6 +589,52 @@ static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
 	return 0;
 }
 
+static int p4tc_print_tmpl_table_act(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_TABLE_ACT_MAX  + 1];
+
+	parse_rtattr_nested(tb, P4TC_TABLE_ACT_MAX, arg);
+
+	if (tb[P4TC_TABLE_ACT_NAME]) {
+		char *table_act_name;
+
+		table_act_name = RTA_DATA(tb[P4TC_TABLE_ACT_NAME]);
+		print_string(PRINT_ANY, "act_name", "        act name %s\n",
+			     table_act_name);
+	}
+
+	if (tb[P4TC_TABLE_ACT_FLAGS]) {
+		__u8 *flags;
+
+		flags = RTA_DATA(tb[P4TC_TABLE_ACT_FLAGS]);
+		if (*flags & (1 << P4TC_TABLE_ACTS_DEFAULT_ONLY))
+			print_string(PRINT_ANY, "flags",
+				     "        act flags %s\n", "defaultonly");
+		else if (*flags & (1 << P4TC_TABLE_ACTS_TABLE_ONLY))
+			print_string(PRINT_ANY, "flags",
+				     "        act flags %s\n", "tableonly");
+	}
+
+	return 0;
+}
+
+static int p4tc_print_tmpl_table_acts_list(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
+	int i;
+
+	parse_rtattr_nested(tb, P4TC_MSGBATCH_SIZE, arg);
+
+	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
+		open_json_object(NULL);
+		p4tc_print_tmpl_table_act(tb[i], f);
+		close_json_object();
+		print_nl();
+	}
+
+	return 0;
+}
+
 static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 			    struct rtattr *arg, __u32 tbl_id, FILE *f)
 {
@@ -666,6 +712,14 @@ static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 		p4tc_print_table_default_action(tb[P4TC_TABLE_DEFAULT_MISS], f);
 		print_nl();
 		close_json_object();
+	}
+
+	if (tb[P4TC_TABLE_ACTS_LIST]) {
+		print_string(PRINT_FP, NULL, "    acts list:\n", NULL);
+		open_json_array(PRINT_JSON, "acts_list");
+		p4tc_print_tmpl_table_acts_list(tb[P4TC_TABLE_ACTS_LIST], f);
+		print_nl();
+		close_json_array(PRINT_JSON, NULL);
 	}
 
 	if (tb[P4TC_TABLE_OPT_ENTRY]) {
@@ -1570,6 +1624,81 @@ static int parse_table_default_action(int *argc_p, char ***argv_p,
 	return 0;
 }
 
+static int parse_tmpl_table_action(int *argc_p, char ***argv_p,
+				   struct nlmsghdr *n, __u32 attr_id)
+{
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct rtattr *tail;
+
+	tail = addattr_nest(n, MAX_MSG, attr_id | NLA_F_NESTED);
+	while (argc > 0) {
+		if (strcmp(*argv, "name") == 0) {
+			NEXT_ARG();
+			addattrstrz(n, MAX_MSG, P4TC_TABLE_ACT_NAME,
+				    *argv);
+			NEXT_ARG_FWD();
+		} else if (strcmp(*argv, "flags") == 0) {
+			__u8 flags;
+
+			NEXT_ARG();
+			if (strcmp(*argv, "defaultonly") == 0) {
+				flags = (1 << P4TC_TABLE_ACTS_DEFAULT_ONLY);
+			} else if (strcmp(*argv, "tableonly") == 0) {
+				flags = (1 << P4TC_TABLE_ACTS_TABLE_ONLY);
+			} else {
+				fprintf(stderr, "Unknown allowed action flags\n");
+				return -1;
+			}
+			addattr8(n, MAX_MSG, P4TC_TABLE_ACT_FLAGS,
+				 flags);
+			NEXT_ARG_FWD();
+		} else {
+			break;
+		}
+	}
+	addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int parse_tmpl_table_acts_list(int *argc_p, char ***argv_p,
+				      struct nlmsghdr *n, __u32 attr_id)
+{
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct rtattr *tail;
+	int i = 1;
+	int ret;
+
+	tail = addattr_nest(n, MAX_MSG, attr_id | NLA_F_NESTED);
+	while (argc > 0) {
+		if (strcmp(*argv, "act") == 0) {
+			NEXT_ARG();
+			ret = parse_tmpl_table_action(&argc, &argv, n, i);
+			if (ret < 0)
+				return ret;
+			goto increment_i;
+		} else {
+			break;
+		}
+
+		NEXT_ARG_FWD();
+
+increment_i:
+		i++;
+	}
+	addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
 static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			    char *p4tcpath[], int cmd, unsigned int *flags)
 {
@@ -1682,6 +1811,12 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				if (get_u16(&table.tbl_permissions, *argv, 16) < 0)
 					return -1;
 				table.tbl_flags |= P4TC_TABLE_FLAGS_PERMISSIONS;
+			} else if (strcmp(*argv, "table_acts") == 0) {
+				NEXT_ARG();
+				if (parse_tmpl_table_acts_list(&argc, &argv, n,
+							       P4TC_TABLE_ACTS_LIST) < 0)
+					return -1;
+				continue;
 			} else if (strcmp(*argv, "entry") == 0) {
 				struct parse_state state = {0};
 				__u32 offset = 0;
