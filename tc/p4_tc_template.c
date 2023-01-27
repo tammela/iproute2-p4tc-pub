@@ -508,7 +508,7 @@ static int print_p4_key(struct rtattr *nla, void *arg)
 }
 
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
-			   FILE *f)
+			   const char *suffix, FILE *f)
 {
 	char permissions[11] = {0};
 	int i_str;
@@ -565,7 +565,8 @@ int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 	}
 
 	print_string(PRINT_FP, NULL, "%s", prefix);
-	print_string(PRINT_ANY, "permissions", "permissions %s\n", permissions);
+	print_string(PRINT_ANY, "permissions", "permissions %s", permissions);
+	print_string(PRINT_FP, NULL, "%s", suffix);
 
 	return 0;
 }
@@ -582,20 +583,24 @@ static int p4tc_print_table_default_action(struct rtattr *arg, FILE *f)
 		__u16 *permissions;
 
 		permissions = RTA_DATA(tb[P4TC_TABLE_DEFAULT_PERMISSIONS]);
-		p4tc_print_permissions("", permissions, f);
+		p4tc_print_permissions("", permissions, "\n", f);
 	}
 
 	return 0;
 }
 
-static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
-			    __u32 tbl_id, FILE *f)
+static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			    struct rtattr *arg, __u32 tbl_id, FILE *f)
 {
+	struct table *table = NULL;
 	struct rtattr *tb[P4TC_TABLE_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_TABLE_MAX, arg);
 
 	if (tbl_id) {
+		if (pipe)
+			table = p4tc_find_table_byid(pipe, tbl_id);
+
 		print_uint(PRINT_ANY, "tblid", "    table id %u", tbl_id);
 		print_nl();
 	}
@@ -617,7 +622,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			   parm->tbl_max_masks);
 		print_uint(PRINT_ANY, "entries", "    table entries %u\n",
 			   parm->tbl_num_entries);
-		p4tc_print_permissions("    ", &parm->tbl_permissions, f);
+		p4tc_print_permissions("    ", &parm->tbl_permissions, "\n", f);
 
 		print_nl();
 	}
@@ -674,7 +679,7 @@ static int p4tc_print_table(struct nlmsghdr *n, struct rtattr *arg,
 			open_json_object("entry");
 			print_nl();
 			print_table_entry(n, tb_nest[P4TC_PARAMS], f,
-					  "        ", tbl_id);
+					  "        ", table, tbl_id);
 			close_json_object();
 		}
 	}
@@ -902,8 +907,9 @@ static int print_pipeline_dump_1(struct nlmsghdr *n, struct rtattr *arg, FILE *f
 	return 0;
 }
 
-static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
-			  struct p4tcmsg *t, FILE *f)
+static int print_p4tmpl_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			  __u16 cmd, struct rtattr *arg, struct p4tcmsg *t,
+			  FILE *f)
 {
 	struct rtattr *tb[P4TC_MAX + 1];
 	__u32 obj = t->obj;
@@ -936,9 +942,11 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 		else {
 			if (tb[P4TC_PATH]) {
 				ids = RTA_DATA(tb[P4TC_PATH]);
-				p4tc_print_table(n, tb[P4TC_PARAMS], ids[0], f);
+				p4tc_print_table(n, pipe, tb[P4TC_PARAMS],
+						 ids[0], f);
 			} else {
-				p4tc_print_table(n, tb[P4TC_PARAMS], 0, f);
+				p4tc_print_table(n, pipe, tb[P4TC_PARAMS], 0,
+						 f);
 			}
 		}
 		break;
@@ -983,9 +991,9 @@ static int print_p4tmpl_1(struct nlmsghdr *n, __u16 cmd, struct rtattr *arg,
 
 #define TMPL_ARRAY_IS_EMPTY(tb) (!(tb[TMPL_ARRAY_START_IDX]))
 
-static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
-			      struct rtattr *nest,
-			      struct p4tcmsg *t, void *arg)
+static int print_p4tmpl_array(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			      __u16 cmd, struct rtattr *nest, struct p4tcmsg *t,
+			      void *arg)
 {
 	int ret = 0;
 	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
@@ -998,7 +1006,7 @@ static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
 	open_json_array(PRINT_JSON, "templates");
 	for (i = TMPL_ARRAY_START_IDX; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		open_json_object(NULL);
-		print_p4tmpl_1(n, cmd, tb[i], t, (FILE *)arg);
+		print_p4tmpl_1(n, pipe, cmd, tb[i], t, (FILE *)arg);
 		close_json_object();
 	}
 	close_json_array(PRINT_JSON, NULL);
@@ -1008,6 +1016,7 @@ static int print_p4tmpl_array(struct nlmsghdr *n, __u16 cmd,
 
 int print_p4tmpl(struct nlmsghdr *n, void *arg)
 {
+	struct p4_tc_pipeline *pipe = NULL;
 	struct rtattr *tb[P4TC_ROOT_MAX + 1];
 	struct p4tcmsg *t = NLMSG_DATA(n);
 	int len;
@@ -1057,8 +1066,11 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
-		print_string(PRINT_ANY, "pname", "pipeline name %s",
-			     RTA_DATA(tb[P4TC_ROOT_PNAME]));
+		char *pname = RTA_DATA(tb[P4TC_ROOT_PNAME]);
+
+		pipe = p4_tc_import_json(pname);
+
+		print_string(PRINT_ANY, "pname", "pipeline name %s", pname);
 		print_nl();
 	}
 
@@ -1070,7 +1082,8 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 
 	if (tb[P4TC_ROOT]) {
 		open_json_object(NULL);
-		print_p4tmpl_array(n, n->nlmsg_type, tb[P4TC_ROOT], t, arg);
+		print_p4tmpl_array(n, pipe, n->nlmsg_type, tb[P4TC_ROOT], t,
+				   arg);
 		close_json_object();
 	}
 

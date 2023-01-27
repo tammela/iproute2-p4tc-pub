@@ -119,7 +119,15 @@ static int p4_print_opt(struct filter_util *qu, FILE *f,
 	if (tb[TCA_P4_CLASSID]) {
 		SPRINT_BUF(b1);
 		print_string(PRINT_ANY, "flowid", "flowid %s ",
-			sprint_tc_classid(rta_getattr_u32(tb[TCA_P4_CLASSID]), b1));
+			sprint_tc_classid(rta_getattr_u32(tb[TCA_P4_CLASSID]),
+					  b1));
+	}
+
+	if (tb[TCA_P4_PNAME]) {
+		print_string(PRINT_ANY, "pname", "pname %s ",
+			     RTA_DATA(tb[TCA_P4_PNAME]));
+	} else {
+		print_string(PRINT_ANY, "pname", "pname %s ", "???");
 	}
 
 	if (tb[TCA_P4_ACT])

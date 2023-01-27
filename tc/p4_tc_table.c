@@ -32,8 +32,8 @@
 #include "tc_util.h"
 #include "p4tc_names.h"
 #include "p4tc_common.h"
-#include "p4tc_introspection.h"
 #include "p4_types.h"
+#include "p4_tc_json.h"
 
 static void parse_common(__u8 *keyblob, __u8 *maskblob,
 			 struct p4_type_value *val, __u32 *offset, size_t sz)
@@ -43,7 +43,8 @@ static void parse_common(__u8 *keyblob, __u8 *maskblob,
 	*offset += sz;
 }
 
-static int parse_ipv4(struct parse_state *state, __u32 *offset, const char *argv)
+static int parse_ipv4(struct parse_state *state, __u32 *offset,
+		      const char *argv)
 {
 	struct p4_type_value val;
 	struct p4_type_s *type = get_p4type_byid(P4T_IPV4ADDR);
@@ -63,6 +64,11 @@ static int parse_ipv4(struct parse_state *state, __u32 *offset, const char *argv
 	return 0;
 }
 
+struct mask_ops {
+	int (*parse)(struct parse_state *state, __u32 *offset,
+		     const char *argv);
+};
+
 struct mask_ops masks_ops[P4T_MAX] = {
 	[P4T_IPV4ADDR] =  {
 		.parse = parse_ipv4,
@@ -76,41 +82,56 @@ static void print_entry_tm(const char *prefix, FILE *f,
 
 	if (tm->created != 0) {
 		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_uint(PRINT_ANY, "created", " created %u sec",
+		print_uint(PRINT_ANY, "created", "    created %u sec",
 			   tm->created / hz);
 	}
 
 	if (tm->lastused != 0) {
 		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_uint(PRINT_ANY, "last_used", " used %u sec",
+		print_uint(PRINT_ANY, "last_used", "    used %u sec",
 			   tm->lastused / hz);
 	}
 
 	if (tm->firstused != 0) {
 		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_uint(PRINT_ANY, "first_used", " firstused %u sec",
+		print_uint(PRINT_ANY, "first_used", "    firstused %u sec",
 			   tm->firstused / hz);
 	}
 	print_nl();
 }
 
 int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
-		      const char *prefix, __u32 tbl_id)
+		      const char *prefix, struct table *table, __u32 tbl_id)
 {
 	struct rtattr *tb[P4TC_ENTRY_MAX + 1];
 	unsigned int len;
 
 	parse_rtattr_nested(tb, P4TC_ENTRY_MAX, arg);
 
-	print_string(PRINT_FP, NULL, "%s", prefix);
-	print_uint(PRINT_ANY, "tblid", "table id %u\n", tbl_id);
-	print_nl();
+	if (table) {
+		print_string(PRINT_ANY, "tblname", " table: %s", table->name);
+		print_uint(PRINT_ANY, "tblid", "(id %u)", table->id);
+	} else {
+		if (tbl_id)
+			print_uint(PRINT_ANY, "tblid", " table: \?\?(id %u)\n",
+				   tbl_id);
+		else
+			print_uint(PRINT_ANY, "tblid", " table: \?\?\?(id %u)\n",
+				   tbl_id);
+	}
 
 	if (tb[P4TC_ENTRY_PRIO]) {
 		__u32 *prio = RTA_DATA(tb[P4TC_ENTRY_PRIO]);
 
 		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_uint(PRINT_ANY, "prio", "entry priority %u\n", *prio);
+		print_uint(PRINT_ANY, "prio", "entry priority %u", *prio);
+	}
+
+	if (tb[P4TC_ENTRY_PERMISSIONS]) {
+		__u16 *permissions;
+
+		permissions = RTA_DATA(tb[P4TC_ENTRY_PERMISSIONS]);
+		p4tc_print_permissions("[", permissions, "]\n", f);
 	}
 
 	if (!tb[P4TC_ENTRY_KEY_BLOB] || !tb[P4TC_ENTRY_MASK_BLOB]) {
@@ -119,111 +140,75 @@ int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 	}
 
 	len = RTA_PAYLOAD(tb[P4TC_ENTRY_KEY_BLOB]);
-	if (len != RTA_PAYLOAD(tb[P4TC_ENTRY_MASK_BLOB])) {
-		fprintf(stderr, "Key and mask blob's sizes must match");
+	if (len != RTA_PAYLOAD(tb[P4TC_ENTRY_MASK_BLOB]) ||
+	    len*8 != table->ksize) {
+		fprintf(stderr, "Size mismatch: table %db key %dB mask %ldB",
+			table->ksize, len, RTA_PAYLOAD(tb[P4TC_ENTRY_MASK_BLOB]));
 		return -1;
 	}
 
-	switch (len << 3) {
-	case 8: {
-		const __u8 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
-		const __u8 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key", "key blob %02x\n", *keyblob);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask", "mask blob %02x\n", *maskblob);
-		break;
-	}
-	case 16: {
-		const __u16 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
-		const __u16 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key", "key blob %04x\n", *keyblob);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask", "mask blob %04x\n", *maskblob);
-		break;
-	}
-	case 32: {
-		const __u32 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
-		const __u32 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key", "key blob %08x\n", *keyblob);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask", "mask blob %08x\n", *maskblob);
-		break;
-	}
-	case 64: {
-		const __u64 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
-		const __u64 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key", "key blob %16llx\n", *keyblob);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask", "mask blob %16llx\n", *maskblob);
-		break;
-	}
-	}
-
-	if ((len << 3) > 64) {
-		const __u8 *keyblob = RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]);
-		const __u64 *keyblob1 = ((__u64 *)keyblob);
-		const __u64 *keyblob2 = ((__u64 *)&keyblob[8]);
-		const __u8 *maskblob = RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]);
-		const __u64 *maskblob1 = ((__u64 *)maskblob);
-		const __u64 *maskblob2 = ((__u64 *)&maskblob[8]);
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key1", "key blob1 %16x\n", *keyblob1);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "key2", "key blob2 %16x\n", *keyblob2);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask1", "mask blob1 %16x\n", *maskblob1);
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_0xhex(PRINT_ANY, "mask2", "mask blob2 %16x\n", *maskblob2);
-	}
+	p4_tc_print_key_data(table, RTA_DATA(tb[P4TC_ENTRY_KEY_BLOB]),
+			     RTA_DATA(tb[P4TC_ENTRY_MASK_BLOB]), len, f,
+			     prefix);
 
 	if (tb[P4TC_ENTRY_ACT]) {
 		print_string(PRINT_FP, NULL,
 			     "%s    entry actions:", prefix);
 		open_json_object("actions");
-		print_nl();
 		tc_print_action(f, tb[P4TC_ENTRY_ACT], 0);
 		print_nl();
 		close_json_object();
 	}
 
+	if (!tb[P4TC_ENTRY_KEY_BLOB] || !tb[P4TC_ENTRY_MASK_BLOB]) {
+		fprintf(stderr, "Bad table entry, missing key and mask");
+		return -1;
+	}
+
+
+	len = RTA_PAYLOAD(tb[P4TC_ENTRY_KEY_BLOB]);
+	if (len != RTA_PAYLOAD(tb[P4TC_ENTRY_MASK_BLOB])) {
+		fprintf(stderr, "Key and mask blob's sizes must match");
+		return -1;
+	}
+
 	if (tb[P4TC_ENTRY_CREATE_WHODUNNIT]) {
 		__u8 *whodunnit = RTA_DATA(tb[P4TC_ENTRY_CREATE_WHODUNNIT]);
 		char name[NAME_MAX_LEN];
+		int ret;
 
-		if (p4tc_ctrltable_getbyid(*whodunnit, name) < 0)
-			return -1;
+		ret = p4tc_ctrltable_getbyid(*whodunnit, name);
+		if (!ret) {
+			print_string(PRINT_ANY, "create_whodunnit",
+				     "    created by: %s ", name);
+			print_int(PRINT_ANY, "create_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		} else {
+			print_string(PRINT_ANY, "create_whodunnit",
+				     "    created by: %s ", "\?\?");
+			print_int(PRINT_ANY, "create_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		}
 
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_string(PRINT_ANY, "create_whodunnit", "create whodunnit %s\n",
-			     name);
 	}
 
 	if (tb[P4TC_ENTRY_UPDATE_WHODUNNIT]) {
 		__u8 *whodunnit = RTA_DATA(tb[P4TC_ENTRY_UPDATE_WHODUNNIT]);
 		char name[NAME_MAX_LEN];
+		int ret;
 
-		if (p4tc_ctrltable_getbyid(*whodunnit, name) < 0)
-			return -1;
-
-		print_string(PRINT_FP, NULL, "%s", prefix);
-		print_string(PRINT_ANY, "update_whodunnit", "update whodunnit %s\n",
-			     name);
-	}
-
-	if (tb[P4TC_ENTRY_PERMISSIONS]) {
-		__u16 *permissions;
-
-		permissions = RTA_DATA(tb[P4TC_ENTRY_PERMISSIONS]);
-		p4tc_print_permissions(prefix, permissions, f);
+		ret = p4tc_ctrltable_getbyid(*whodunnit, name);
+		if (!ret) {
+			print_string(PRINT_ANY, "update_whodunnit",
+				     "    updated by: %s ", name);
+			print_int(PRINT_ANY, "update_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		} else {
+			print_string(PRINT_ANY, "update_whodunnit",
+				     "    updated by: %s ", "\?\?");
+			print_int(PRINT_ANY, "update_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		}
 	}
 
 	if (tb[P4TC_ENTRY_TM]) {
@@ -232,7 +217,6 @@ int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		tm = RTA_DATA(tb[P4TC_ENTRY_TM]);
 		print_entry_tm(prefix, f, tm);
 	}
-
 	print_nl();
 
 	return 0;
@@ -250,11 +234,12 @@ static int print_table_entry_flush(struct nlmsghdr *n,  struct rtattr *cnt_attr,
 	return 0;
 }
 
-static int print_table_1(struct nlmsghdr *n, struct rtattr *arg,
-			  FILE *f)
+static int print_table_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			 struct rtattr *arg, FILE *f)
 {
 	int cmd = n->nlmsg_type;
 	__u32 *tbl_id = NULL;
+	struct table *table = NULL;
 	struct rtattr *tb[P4TC_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_MAX, arg);
@@ -262,16 +247,32 @@ static int print_table_1(struct nlmsghdr *n, struct rtattr *arg,
 	if (tb[P4TC_PATH])
 		tbl_id = RTA_DATA(tb[P4TC_PATH]);
 
+	if (tbl_id) {
+		if (pipe) {
+			table = p4tc_find_table_byid(pipe, *tbl_id);
+			if (!table) {
+				fprintf(stderr, "Unable to find table id %d\n",
+					*tbl_id);
+				return -1;
+			}
+		}
+	}
+
 	if (cmd == RTM_DELP4TBENT && (n->nlmsg_flags & NLM_F_ROOT))
 		print_table_entry_flush(n, tb[P4TC_COUNT], f);
-	else
-		print_table_entry(n, tb[P4TC_PARAMS], f, "",
-				  tbl_id ? *tbl_id : 0);
+	else {
+		if (tb[P4TC_PARAMS])
+			print_table_entry(n, tb[P4TC_PARAMS], f, "", table,
+					  tbl_id ? *tbl_id : 0);
+		else
+			fprintf(stderr, "Kernel buggy? No entries\n");
+	}
 
 	return 0;
 }
 
-static int print_table_root(struct nlmsghdr *n, struct rtattr *arg, FILE *f)
+static int print_table_root(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
+			    struct rtattr *arg, FILE *f)
 {
 	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
 	int i;
@@ -281,7 +282,7 @@ static int print_table_root(struct nlmsghdr *n, struct rtattr *arg, FILE *f)
 	open_json_array(PRINT_JSON, "entries");
 	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
 		open_json_object(NULL);
-		print_table_1(n, tb[i], f);
+		print_table_1(n, pipe, tb[i], f);
 		close_json_object();
 	}
 	close_json_array(PRINT_JSON, NULL);
@@ -292,6 +293,7 @@ static int print_table_root(struct nlmsghdr *n, struct rtattr *arg, FILE *f)
 int print_table(struct nlmsghdr *n, void *arg)
 {
 	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1] = {};
+	struct p4_tc_pipeline *pipe = NULL;
 	struct p4tcmsg *t = NLMSG_DATA(n);
 	__u32 flags = n->nlmsg_flags;
 	int len;
@@ -322,19 +324,30 @@ int print_table(struct nlmsghdr *n, void *arg)
 	parse_rtattr_flags(tb, P4TC_ROOT_MAX, P4TC_RTA(t), len, NLA_F_NESTED);
 
 	if (tb[P4TC_ROOT_PNAME]) {
-		print_string(PRINT_ANY, "pname", "pipeline name %s",
-			     RTA_DATA(tb[P4TC_ROOT_PNAME]));
-		print_nl();
-	}
-	if (t->pipeid) {
-		print_uint(PRINT_ANY, "pipeid", "pipeline id %u", t->pipeid);
+		char *pname = RTA_DATA(tb[P4TC_ROOT_PNAME]);
+		pipe = p4_tc_import_json(pname);
+		if (!pipe) {
+			fprintf(stderr, "Unable to find pipeline %s\n",
+				pname);
+			print_string(PRINT_ANY, "pname", "pipeline: %s",
+				     pname);
+			if (t->pipeid)
+				print_uint(PRINT_ANY, "pipeid", "(id %u)",
+					   t->pipeid);
+		} else {
+			pipe->id = t->pipeid;
+			print_string(PRINT_ANY, "pname", "pipeline:  %s",
+				     pipe->name);
+			print_uint(PRINT_ANY, "pipeid", "(id %u)",
+				   t->pipeid);
+		}
 		print_nl();
 	}
 	close_json_object();
 
 	if (tb[P4TC_ROOT]) {
 		open_json_object(NULL);
-		print_table_root(n, tb[P4TC_ROOT], (FILE *)arg);
+		print_table_root(n, pipe, tb[P4TC_ROOT], (FILE *)arg);
 		close_json_object();
 	}
 
@@ -415,6 +428,7 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 		val.mask = mask;
 		val.bitsz = bitsz ? bitsz : type->bitsz;
 		if (type->parse_p4t(&val, argv, 0) < 0) {
+			fprintf(stderr, "Failed to parse %s\n", argv);
 			free(value);
 			free(mask);
 			return -1;
@@ -434,33 +448,33 @@ static int __parse_table_keys(struct parse_state *state, __u32 *offset,
 }
 
 static int parse_table_field(int *argc_p, char ***argv_p,
-			     struct parse_state *state, __u32 *offset)
+                            struct parse_state *state, __u32 *offset)
 {
-	char **argv = *argv_p;
-	int argc = *argc_p;
-	struct p4_type_s *type;
-	__u32 bitsz;
+       char **argv = *argv_p;
+       int argc = *argc_p;
+       struct p4_type_s *type;
+       __u32 bitsz;
 
-	NEXT_ARG();
+       NEXT_ARG();
 
-	type = get_p4type_byarg(*argv, &bitsz);
-	if (!type)
-		return -1;
+       type = get_p4type_byarg(*argv, &bitsz);
+       if (!type)
+               return -1;
 
-	NEXT_ARG();
+       NEXT_ARG();
 
-	/* XXX: Lets see if we keep this in the long run.
-	 * something like this when no introspection (processed after
-	 * you hit enter):
-	 * tc p4 create ptables/table/mysrc ip/dstAddr ipv4 192.168.0.0/16
-	 */
-	if (__parse_table_keys(state, offset, *argv, bitsz, type) < 0)
-		return -1;
+       /* XXX: Lets see if we keep this in the long run.
+        * something like this when no introspection (processed after
+        * you hit enter):
+        * tc p4 create ptables/table/mysrc ip/dstAddr ipv4 192.168.0.0/16
+        */
+       if (__parse_table_keys(state, offset, *argv, bitsz, type) < 0)
+               return -1;
 
-	*argv_p = argv;
-	*argc_p = argc;
+       *argv_p = argv;
+       *argc_p = argc;
 
-	return 0;
+       return 0;
 }
 
 static int parse_table_keys(int *argc_p, char ***argv_p,
@@ -473,36 +487,52 @@ static int parse_table_keys(int *argc_p, char ***argv_p,
 	char **argv = *argv_p;
 	int argc = *argc_p;
 	int ret = 0;
+	struct key_fields_list *key;
+	struct p4_tc_pipeline *p;
+	struct p4_type_s *typ;
+	struct table *t;
 
-	if (!state->has_parsed_keys) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     TABLENAMSIZ);
-		state->num_keys = p4tc_get_table_keys(state->keys, pname,
-						      full_tblname, tbl_id);
+	p = p4_tc_import_json(pname);
+	if (!p) {
+		fprintf(stderr, "parse keys - Unable to find pipeline %s\n",
+			p4tcpath[PATH_TABLE_PNAME_IDX]);
+		return -1;
 	}
 
-	if (state->num_keys > 0) {
-		struct tkey *key;
+	if (concat_cb_name(full_tblname, cbname, tblname, TABLENAMSIZ) < 0) {
+		fprintf(stderr, "Table name to long %s/%s\n", cbname, tblname);
+		return -1;
+	}
 
-		state->has_parsed_keys = true;
-		key = p4tc_find_table_key(state->keys, *argv, state->num_keys);
-		if (key) {
-			NEXT_ARG();
-			if (__parse_table_keys(state, offset, *argv,
-					       0, key->type) < 0) {
-				ret = -1;
-				goto out;
-			}
-		} else {
-			fprintf(stderr, "Unknown arg %s\n", *argv);
+	t = p4tc_find_table(p, full_tblname);
+	if (!t) {
+		fprintf(stderr, "Unable to find table %s\n", tblname);
+		return -1;
+	}
+
+	state->has_parsed_keys = true;
+	key = p4tc_find_table_keyfield(t, 1, *argv);
+	if (!key) {
+		fprintf(stderr, "Unable to find key field %s in introspection file\n",
+			*argv);
+		return -1;
+	}
+	typ = get_p4type_byname(key->type);
+	if (!typ) {
+		fprintf(stderr, "Unable to find type %s\n", key->type);
+		return -1;
+	}
+	if (key) {
+		NEXT_ARG();
+		if (__parse_table_keys(state, offset, *argv,
+				       0, typ) < 0) {
 			ret = -1;
 			goto out;
 		}
-	} else { /* No introspection */
-		if (parse_table_field(&argc, &argv, state, offset) < 0) {
-			ret = -1;
-			goto out;
-		}
+	} else {
+		fprintf(stderr, "Unknown arg %s\n", *argv);
+		ret = -1;
+		goto out;
 	}
 
 out:
@@ -683,8 +713,10 @@ static int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
 		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
 
 	if (state.has_parsed_keys) {
-		addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB, state.keyblob, offset);
-		addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB, state.maskblob, offset);
+		addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB, state.keyblob,
+			  offset);
+		addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB, state.maskblob,
+			  offset);
 	}
 
 	if (parm)
