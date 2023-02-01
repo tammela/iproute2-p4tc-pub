@@ -42,7 +42,8 @@ struct p4_type_s {
 	__u16 startbit;
 	__u16 endbit;
 	int (*parse_p4t)(struct p4_type_value *val, const char *arg, int base);
-	void (*print_p4t)(const char *n, struct p4_type_value *val, FILE *f);
+	void (*print_p4t)(const char *n, const char *json_name,
+			  struct p4_type_value *val, FILE *f);
 	const char *name;
 	__u8 flags;
 	struct hlist_node hlist;
