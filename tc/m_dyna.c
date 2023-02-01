@@ -332,7 +332,7 @@ static int print_dyna_parm_value(FILE *f, struct action_util *au,
 		val.value = value;
 		val.mask = mask;
 		if (t->print_p4t)
-			t->print_p4t(" value:", &val, f);
+			t->print_p4t(" value:", "value", &val, f);
 	}
 
 	return 0;
