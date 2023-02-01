@@ -678,10 +678,10 @@ static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
 
 		if (t->bitsz > 32) {
 			val.value = immedv_large;
-			t->print_p4t("value", &val, f);
+			t->print_p4t("value: ", "value", &val, f);
 		} else {
 			val.value = &oper->immedv;
-			t->print_p4t("value", &val, f);
+			t->print_p4t("value: ", "value", &val, f);
 		}
 	}
 }
