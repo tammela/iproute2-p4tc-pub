@@ -426,7 +426,7 @@ static void p4_tc_print_keyfield_data(struct key_fields_list *kf, __u8 *k, __u8 
 	int i, l;
 
 	if (t) {
-		t->print_p4t(" fieldval ", &v, fp);
+		t->print_p4t(" fieldval ", "fieldval", &v, fp);
 		return;
 	}
 
