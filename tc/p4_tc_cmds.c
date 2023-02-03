@@ -678,10 +678,10 @@ static void print_constant_type(struct p4tc_u_operand *oper, char **p4tcpath,
 
 		if (t->bitsz > 32) {
 			val.value = immedv_large;
-			t->print_p4t("value", &val, f);
+			t->print_p4t("value: ", "value", &val, f);
 		} else {
 			val.value = &oper->immedv;
-			t->print_p4t("value", &val, f);
+			t->print_p4t("value: ", "value", &val, f);
 		}
 	}
 }
@@ -782,11 +782,11 @@ static void print_act_param_type(struct p4tc_u_operand *oper,
 static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
 				void *oppath, void *immedv_large, void *prefix, FILE *f)
 {
+	struct p4_type_s *p4_type = get_p4type_byid(oper->oper_datatype);
 	char *pname = p4tcpath[0];
 	__u32 metaid;
 
 	print_string(PRINT_ANY, "type", " type %s:", "metadata");
-
 
 	metaid = oper->immedv;
 	if (oper->pipeid)
@@ -796,6 +796,11 @@ static void print_metadata_type(struct p4tc_u_operand *oper, char **p4tcpath,
 	print_string(PRINT_ANY, "name", "%s", oppath);
 
 	print_uint(PRINT_ANY, "id", "(id %u)\n", metaid);
+
+	print_string(PRINT_ANY, "container", "\t    container %s",
+		     p4_type->name);
+	print_uint(PRINT_ANY, "startbit", " startbit %u", oper->oper_startbit);
+	print_uint(PRINT_ANY, "endbit", " endbit %u\n", oper->oper_endbit);
 
 	if (prefix)
 		print_string(PRINT_ANY, "prefix", "\t    prefix %s", prefix);

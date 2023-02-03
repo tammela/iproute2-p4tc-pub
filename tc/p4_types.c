@@ -271,8 +271,8 @@ static int parse_p4t_mac_val(struct p4_type_value *val, const char *arg,
 	return 0;
 }
 
-static void print_p4t_u8_val(const char *name, struct p4_type_value *val,
-			     FILE *f)
+static void print_p4t_u8_val(const char *name, const char *json_name,
+			     struct p4_type_value *val, FILE *f)
 {
 	__u8 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -280,11 +280,11 @@ static void print_p4t_u8_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, *ival);
+	print_uint(PRINT_ANY, json_name, buf, *ival);
 }
 
-static void print_p4t_u16_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_u16_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	__u16 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -292,11 +292,11 @@ static void print_p4t_u16_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, *ival);
+	print_uint(PRINT_ANY, json_name, buf, *ival);
 }
 
-static void print_p4t_be16_val(const char *name, struct p4_type_value *val,
-			       FILE *f)
+static void print_p4t_be16_val(const char *name, const char *json_name,
+			       struct p4_type_value *val, FILE *f)
 {
 	__be16 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -304,11 +304,11 @@ static void print_p4t_be16_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, htons(*ival));
+	print_uint(PRINT_ANY, json_name, buf, htons(*ival));
 }
 
-static void print_p4t_u32_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_u32_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	__u32 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -316,11 +316,11 @@ static void print_p4t_u32_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, *ival);
+	print_uint(PRINT_ANY, json_name, buf, *ival);
 }
 
-static void print_p4t_bool_val(const char *name, struct p4_type_value *val,
-			       FILE *f)
+static void print_p4t_bool_val(const char *name, const char *json_name,
+			       struct p4_type_value *val, FILE *f)
 {
 	bool *ival = val->value;
 	SPRINT_BUF(buf);
@@ -328,11 +328,11 @@ static void print_p4t_bool_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %s", SPRINT_BSIZE);
 
-	print_string(PRINT_ANY, name, buf, *ival ? "true" : "false");
+	print_string(PRINT_ANY, json_name, buf, *ival ? "true" : "false");
 }
 
-static void print_p4t_s32_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_s32_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	__s32 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -340,11 +340,11 @@ static void print_p4t_s32_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %d", SPRINT_BSIZE);
 
-	print_int(PRINT_ANY, name, buf, *ival);
+	print_int(PRINT_ANY, json_name, buf, *ival);
 }
 
-static void print_p4t_be32_val(const char *name, struct p4_type_value *val,
-			       FILE *f)
+static void print_p4t_be32_val(const char *name, const char *json_name,
+			       struct p4_type_value *val, FILE *f)
 {
 	__be32 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -352,11 +352,11 @@ static void print_p4t_be32_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, ntohl(*ival));
+	print_uint(PRINT_ANY, json_name, buf, ntohl(*ival));
 }
 
-static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_u64_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	__u64 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -364,11 +364,11 @@ static void print_p4t_u64_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, *ival);
+	print_uint(PRINT_ANY, json_name, buf, *ival);
 }
 
-static void print_p4t_be64_val(const char *name, struct p4_type_value *val,
-			       FILE *f)
+static void print_p4t_be64_val(const char *name, const char *json_name,
+			       struct p4_type_value *val, FILE *f)
 {
 	__be64 *ival = val->value;
 	SPRINT_BUF(buf);
@@ -376,12 +376,12 @@ static void print_p4t_be64_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %u", SPRINT_BSIZE);
 
-	print_uint(PRINT_ANY, name, buf, ntohll(*ival));
+	print_uint(PRINT_ANY, json_name, buf, ntohll(*ival));
 }
 
 
-static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_dev_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	const __u32 *ifindex = val->value;
 	const char *ifname = ll_index_to_name(*ifindex);
@@ -395,11 +395,11 @@ static void print_p4t_dev_val(const char *name, struct p4_type_value *val,
 	strlcpy(buf, name, SPRINT_BSIZE);
 	strncat(buf, " %s", SPRINT_BSIZE);
 
-	print_string(PRINT_ANY, name, buf, ifname);
+	print_string(PRINT_ANY, json_name, buf, ifname);
 }
 
-static void print_p4t_mac_val(const char *name, struct p4_type_value *val,
-			      FILE *f)
+static void print_p4t_mac_val(const char *name, const char *json_name,
+			      struct p4_type_value *val, FILE *f)
 {
 	unsigned char *mac_val = val->value;
 	SPRINT_BUF(b1);
@@ -409,11 +409,11 @@ static void print_p4t_mac_val(const char *name, struct p4_type_value *val,
 	strncat(buf, " %s", SPRINT_BSIZE);
 
 	ll_addr_n2a(mac_val, ETH_ALEN, 0, b1, sizeof(b1));
-	print_string(PRINT_ANY, name, buf, b1);
+	print_string(PRINT_ANY, json_name, buf, b1);
 }
 
-static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
-			       FILE *f)
+static void print_p4t_ipv4_val(const char *name, const char *json_name,
+			       struct p4_type_value *val, FILE *f)
 {
 	__u8 *addr = val->value;
 	SPRINT_BUF(buf1);
@@ -432,7 +432,7 @@ static void print_p4t_ipv4_val(const char *name, struct p4_type_value *val,
 		 format_host_r(AF_INET, 4, addr, buf1, sizeof(buf1)),
 		 len);
 
-	print_string(PRINT_ANY, name, buf, buf2);
+	print_string(PRINT_ANY, json_name, buf, buf2);
 }
 
 struct p4_type_s *get_p4type_byid(int id)

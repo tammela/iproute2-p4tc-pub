@@ -370,7 +370,7 @@ static int print_register_template_value(struct rtattr *arg,
 
 			print_string(PRINT_FP, NULL, "        ", NULL);
 			if (type->print_p4t)
-				type->print_p4t(prefix, &val, f);
+				type->print_p4t(prefix, prefix, &val, f);
 			print_nl();
 		} else {
 			open_json_array(PRINT_JSON, "values");
@@ -385,7 +385,8 @@ static int print_register_template_value(struct rtattr *arg,
 				open_json_object(NULL);
 				print_string(PRINT_FP, NULL, "        ", NULL);
 				if (type->print_p4t)
-					type->print_p4t(prefix, &val, f);
+					type->print_p4t(prefix, prefix, &val,
+							f);
 				print_nl();
 				close_json_object();
 
