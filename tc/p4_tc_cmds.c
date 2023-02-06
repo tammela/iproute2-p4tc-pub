@@ -73,6 +73,8 @@ static int parse_jump_operands(struct action_util *a, int *argc_p,
 			       char ***argv_p, struct p4tc_cmds_v *ins);
 static int parse_label_operands(struct action_util *a, int *argc_p,
 			       char ***argv_p, struct p4tc_cmds_v *ins);
+static int parse_ret_operands(struct action_util *a, int *argc_p,
+			      char ***argv_p, struct p4tc_cmds_v *ins);
 
 struct op_type_s {
         int id;
@@ -107,6 +109,7 @@ static struct op_type_s op_types [] = {
 	{P4TC_CMD_OP_BXOR, "bxor", parse_binarith_operands, NULL },
 	{P4TC_CMD_OP_JUMP, "jump", parse_jump_operands, NULL },
 	{P4TC_CMD_OP_LABEL, "label", parse_label_operands, NULL },
+	{P4TC_CMD_OP_RET, "return", parse_ret_operands, NULL },
 };
 
 static struct op_type_s *get_op_byname(const char *name)
@@ -190,6 +193,8 @@ static void print_register_type(struct p4tc_u_operand *oper, char **p4tcpath,
 				void *oppath, void *immedv_large, void *prefix, FILE *f);
 static void print_label_type(struct p4tc_u_operand *oper, char **p4tcpath,
 			     void *oppath, void *immedv_large, void *prefix, FILE *f);
+static void print_ret_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *immedv_large, void *prefix, FILE *f);
 
 static struct opnd_type_s opnd_types [] = {
 	{P4TC_OPER_META, P4T_PATH, "metadata", get_metadata_type,
@@ -210,6 +215,7 @@ static struct opnd_type_s opnd_types [] = {
 	 print_register_type},
 	{P4TC_OPER_LABEL, P4T_PATH, "label", get_label_type,
 	 print_label_type},
+	{P4TC_OPER_RET, P4T_PATH, "return", NULL, print_ret_type},
 };
 
 static struct opnd_type_s *get_optype_byname(const char *name)
@@ -489,6 +495,17 @@ static int get_jump_type(struct action_util *a, int argc, char **argv,
 	}
 
 	strlcpy(intern_op->path, f0, LABELNAMSIZ);
+
+	return 0;
+}
+
+static int get_ret_type(int *argc, char ***argv, struct p4tc_u_operand *A)
+{
+	if (parse_action_control(argc, argv, (int *)&A->immedv, false)) {
+		fprintf(stderr, "Unable to parse gact return value %s\n",
+			**argv);
+		return -1;
+	}
 
 	return 0;
 }
@@ -836,6 +853,13 @@ static void print_label_type(struct p4tc_u_operand *oper, char **p4tcpath,
 {
 	print_string(PRINT_ANY, "type", " type %s\n", "label");
 	print_string(PRINT_ANY, "label", " label %s\n", oppath);
+}
+
+static void print_ret_type(struct p4tc_u_operand *oper, char **p4tcpath,
+			   void *oppath, void *immedv_large, void *prefix, FILE *f)
+{
+	print_string(PRINT_ANY, "type", " type %s", "return");
+	print_action_control(f, "action ", oper->immedv, "\n");
 }
 
 static void print_operand_content(const char *ABC, struct action_util *au,
@@ -1425,6 +1449,28 @@ static int parse_label_operands(struct action_util *a, int *argc_p,
 	return 0;
 }
 
+static int parse_ret_operands(struct action_util *a, int *argc_p,
+			      char ***argv_p, struct p4tc_cmds_v *ins)
+{
+	struct p4tc_u_operand *A = &ins->opnds[P4TC_CMD_OPER_A].op;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+
+	A->oper_type = P4TC_OPER_RET;
+	A->oper_datatype = P4T_U32;
+	A->oper_startbit = 0;
+	A->oper_endbit = 31;
+	if (get_ret_type(&argc, &argv, A) < 0) {
+		fprintf(stderr, "Unable to parse gact return value %s\n",
+			*argv);
+		return -1;
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+	return 0;
+}
+
 static int parse_sndportegr_operands(struct action_util *a, int *argc_p,
 				     char ***argv_p, struct p4tc_cmds_v *ins)
 {
@@ -1951,6 +1997,22 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			ret = op->parse_operands(a, &argc, &argv, ins);
 			if (ret != 0) {
 				fprintf(stderr, "bad p4tc_cmd <label>: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			continue;
+		} else if (strcmp(*argv, "return") == 0) {
+			NEXT_ARG();
+			ins->ins.op_type = P4TC_CMD_OP_RET;
+			op = get_op_byname("return");
+			if (!op) {
+				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
+					argc, *argv);
+				return -1;
+			}
+			ret = op->parse_operands(a, &argc, &argv, ins);
+			if (ret != 0) {
+				fprintf(stderr, "bad p4tc_cmd <return>: %d:<%s>\n",
 					argc, *argv);
 				return -1;
 			}
