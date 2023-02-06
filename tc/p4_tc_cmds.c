@@ -49,6 +49,7 @@ struct p4tc_cmds_v {
 	struct p4tc_u_operate ins;
 	char *label1;
 	char *label2;
+	char *cmd_label;
 };
 
 static struct p4tc_cmds_v INS[P4TC_CMDS_LIST_MAX];
@@ -657,7 +658,8 @@ int get_res_type(struct action_util *a, const char *op_components[],
 	return 0;
 }
 
-static void print_operation(struct p4tc_u_operate *ins, FILE *f)
+static void print_operation(struct p4tc_u_operate *ins, char *cmd_label,
+			    FILE *f)
 {
 	struct op_type_s *op = get_op_byid(ins->op_type);
 
@@ -667,6 +669,10 @@ static void print_operation(struct p4tc_u_operate *ins, FILE *f)
 	else
 		print_string(PRINT_ANY, "instruction", "\n\t Instruction: %s\n",
 			     op->name);
+
+	if (cmd_label)
+		print_string(PRINT_ANY, "cmd_label", "\t  command label: %s\n",
+			     cmd_label);
 
 	print_string(PRINT_FP, NULL, "\t  control: ", NULL);
 	print_action_control(f, "", ins->op_ctl1, "");
@@ -1985,22 +1991,6 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 					argc, *argv);
 			}
 			continue;
-		} else if (strcmp(*argv, "label") == 0) {
-			NEXT_ARG();
-			ins->ins.op_type = P4TC_CMD_OP_LABEL;
-			op = get_op_byname("label");
-			if (!op) {
-				fprintf(stderr, "p4tc_cmds unknown cmd: %d:<%s>\n",
-					argc, *argv);
-				return -1;
-			}
-			ret = op->parse_operands(a, &argc, &argv, ins);
-			if (ret != 0) {
-				fprintf(stderr, "bad p4tc_cmd <label>: %d:<%s>\n",
-					argc, *argv);
-				return -1;
-			}
-			continue;
 		} else if (strcmp(*argv, "return") == 0) {
 			NEXT_ARG();
 			ins->ins.op_type = P4TC_CMD_OP_RET;
@@ -2017,7 +2007,14 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 				return -1;
 			}
 			continue;
-
+		} else if (strcmp(*argv, "label") == 0) {
+			NEXT_ARG();
+			ins->cmd_label = calloc(1, strnlen(*argv, LABELNAMSIZ) + 1);
+			if (!ins->cmd_label) {
+				fprintf(stderr, "Unable to allocate cmd label");
+				return -1;
+			}
+			strlcpy(ins->cmd_label, *argv, LABELNAMSIZ);
 		} else if (strcmp(*argv, "index") == 0) {
 			break;
 		} else if (strcmp(*argv, "defact") == 0) {
@@ -2030,7 +2027,8 @@ int p4tc_parse_cmds(struct action_util *a, int *argc_p, char ***argv_p)
 			return -1;
 		}
 
-		NEXT_ARG();
+		argv++;
+		argc--;
 	}
 
 	*argc_p = argc;
@@ -2063,6 +2061,12 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 
 		ins = &INS[i];
 
+		/* If operation has no type and has label attribute, treat as
+		 * label operation.
+		 */
+		if (!ins->ins.op_type && ins->cmd_label)
+			ins->ins.op_type = P4TC_CMD_OP_LABEL;
+
 		addattr_l(n, MAX_MSG, P4TC_CMD_OPERATION, &ins->ins,
 			  sizeof(struct p4tc_u_operate));
 
@@ -2072,6 +2076,9 @@ int p4tc_add_cmds(struct nlmsghdr *n, int ins_cnt, int tca_id)
 		if (ins->label2)
 			addattrstrz(n, MAX_MSG, P4TC_CMD_OPER_LABEL2,
 				    ins->label2);
+		if (ins->cmd_label)
+			addattrstrz(n, MAX_MSG, P4TC_CMD_OPER_CMD_LABEL,
+				    ins->cmd_label);
 
 		tailoper = addattr_nest(n, MAX_MSG,
 					     P4TC_CMD_OPER_LIST | NLA_F_NESTED);
@@ -2177,6 +2184,7 @@ static int p4tc_cmds_print_operands(struct action_util *au,
 static int p4tc_cmds_print_ops(int i, struct action_util *au,
 			       struct rtattr *op_attr, FILE *f)
 {
+	char *cmd_label = NULL;
 	struct rtattr *tb[P4TC_CMD_OPER_MAX + 1];
 	struct p4tc_u_operate *op_entry;
 	int err;
@@ -2190,7 +2198,10 @@ static int p4tc_cmds_print_ops(int i, struct action_util *au,
 
 	op_entry = RTA_DATA(tb[P4TC_CMD_OPERATION]);
 
-	print_operation(op_entry, f);
+	if (tb[P4TC_CMD_OPER_CMD_LABEL])
+		cmd_label = RTA_DATA(tb[P4TC_CMD_OPER_CMD_LABEL]);
+
+	print_operation(op_entry, cmd_label, f);
 
 	open_json_object("operands");
 
