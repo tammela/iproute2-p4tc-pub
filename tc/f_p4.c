@@ -54,9 +54,7 @@ static int p4_parse_opt(struct filter_util *qu, char *handle,
 	if (argc == 0)
 		return 0;
 
-	tail = (struct rtattr *)(((void *)n)+NLMSG_ALIGN(n->nlmsg_len));
-	addattr_l(n, MAX_MSG, TCA_OPTIONS, NULL, 0);
-
+	tail = addattr_nest(n, MAX_MSG, TCA_OPTIONS | NLA_F_NESTED);
 	while (argc > 0) {
 		if (strcmp(*argv, "classid") == 0 ||
 		    strcmp(*argv, "flowid") == 0) {
@@ -93,13 +91,13 @@ static int p4_parse_opt(struct filter_util *qu, char *handle,
 		}
 		argc--; argv++;
 	}
+	addattr_nest_end(n, tail);
 
 	if (!pname) {
 		fprintf(stderr, "pname MUST be provided\n");
 		return -1;
 	}
 
-	tail->rta_len = (((void *)n)+n->nlmsg_len) - (void *)tail;
 	return 0;
 }
 
