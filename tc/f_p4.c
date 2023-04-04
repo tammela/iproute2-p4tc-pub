@@ -68,7 +68,7 @@ static int p4_parse_opt(struct filter_util *qu, char *handle,
 			addattr_l(n, MAX_MSG, TCA_P4_CLASSID, &handle, 4);
 		} else if (strcmp(*argv, "action") == 0) {
 			NEXT_ARG();
-			if (parse_action(&argc, &argv, TCA_P4_ACT, n)) {
+			if (parse_action(&argc, &argv, TCA_P4_ACT | NLA_F_NESTED, n)) {
 				fprintf(stderr, "Illegal \"action\"\n");
 				return -1;
 			}
@@ -78,8 +78,7 @@ static int p4_parse_opt(struct filter_util *qu, char *handle,
 			NEXT_ARG();
 
 			pname = *argv;
-			addattr_l(n, MAX_MSG, TCA_P4_PNAME, *argv,
-				  PIPELINENAMSIZ);
+			addattrstrz(n, MAX_MSG, TCA_P4_PNAME, *argv);
 
 		} else if (strcmp(*argv, "help") == 0) {
 			explain();
