@@ -16,7 +16,6 @@
 #define JSON_TABLE_LIST_TABLE_ID "id"
 #define JSON_TABLE_LIST_TABLE_SIZE "tentries"
 #define JSON_TABLE_LIST_TABLE_KEYS "keyfields"
-#define JSON_TABLE_LIST_TABLE_KEY_ID "keyid"
 #define JSON_TABLE_LIST_TABLE_KEY_SIZE "keysize"
 #define JSON_TABLE_LIST_TABLE_KEY_FIELD_ID "id" //keyfield id
 #define JSON_TABLE_LIST_TABLE_KEY_NAME "name"
