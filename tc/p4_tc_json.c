@@ -244,14 +244,6 @@ static int json_parse_table(cJSON *table_cjson, struct table *table)
 		return -1;
 	}
 
-	ret = cjson_get_int(table_cjson, JSON_TABLE_LIST_TABLE_KEY_ID, &keyid);
-	if (ret) {
-		fprintf(stderr, "Failed to parse table keyid:<%s> for:\n<%s>\n",
-			JSON_TABLE_LIST_TABLE_KEY_ID,
-			cJSON_Print(table_cjson));
-		return -1;
-	}
-
 	ret = cjson_get_int(table_cjson, JSON_TABLE_LIST_TABLE_SIZE, &size);
 	if (ret) {
 		fprintf(stderr, "Failed to parse table size:<%s> for:\n<%s>\n",
