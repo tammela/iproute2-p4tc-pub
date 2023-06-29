@@ -42,6 +42,8 @@ int print_p4runtime(struct nlmsghdr *n, void *arg)
 	switch (t->obj) {
 	case P4TC_OBJ_RUNTIME_TABLE:
 		return print_table(n, arg);
+	case P4TC_OBJ_RUNTIME_EXTERN:
+		return print_extern(n, arg);
 	default:
 		return 0;
 	}
@@ -96,6 +98,13 @@ static int tc_table_cmd(int cmd, unsigned int flags, int *argc_p, char ***argv_p
 		if (ret < 0)
 			return ret;
 		break;
+	case P4TC_OBJ_RUNTIME_EXTERN: {
+		ret = parse_p4tc_extern(&req.n, cmd, &flags, &argc, &argv,
+					(const char **)p4tcpath);
+		if (ret < 0)
+			return ret;
+		break;
+	}
 	default:
 		fprintf(stderr, "Unknown runtime object");
 		return -1;
@@ -159,8 +168,7 @@ int do_p4_runtime(int argc, char **argv)
 					   NLM_F_EXCL | NLM_F_CREATE, &argc,
 					   &argv);
 		} else if (matches(*argv, "update") == 0) {
-			ret = tc_table_cmd(RTM_P4TC_UPDATE, NLM_F_REPLACE,
-					   &argc, &argv);
+			ret = tc_table_cmd(RTM_P4TC_UPDATE, 0, &argc, &argv);
 		} else if (matches(*argv, "get") == 0) {
 			ret = tc_table_cmd(RTM_P4TC_GET, 0, &argc, &argv);
 		} else if (matches(*argv, "delete") == 0) {
