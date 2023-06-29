@@ -46,6 +46,225 @@ static void p4template_usage(void)
 	exit(-1);
 }
 
+static int p4tc_extern_inst_print_param_value(FILE *f, struct p4_type_s *t,
+					      struct rtattr *arg, void *mask)
+{
+	struct rtattr *tb[P4TC_EXT_VALUE_PARAMS_MAX + 1];
+	struct p4_type_value val;
+	void *value;
+
+	parse_rtattr_nested(tb, P4TC_EXT_VALUE_PARAMS_MAX, arg);
+
+	value = RTA_DATA(tb[P4TC_EXT_PARAMS_VALUE_RAW]);
+
+	val.value = value;
+	val.mask = mask;
+	if (t->print_p4t)
+		t->print_p4t(" value:", "value", &val, f);
+
+	return 0;
+}
+
+static int p4tc_extern_inst_print_param(FILE *f, struct rtattr *arg)
+{
+	__u8 *flags = NULL;
+	struct rtattr *tb[P4TC_EXT_PARAMS_MAX + 1];
+	struct p4_type_s *t;
+
+	parse_rtattr_nested(tb, P4TC_EXT_PARAMS_MAX, arg);
+
+	if (tb[P4TC_EXT_PARAMS_FLAGS])
+		flags = RTA_DATA(tb[P4TC_EXT_PARAMS_FLAGS]);
+
+	if (tb[P4TC_EXT_PARAMS_NAME]) {
+		char *name;
+
+		name = RTA_DATA(tb[P4TC_EXT_PARAMS_NAME]);
+		if (flags && *flags & P4TC_EXT_PARAMS_FLAG_ISKEY)
+			print_string(PRINT_ANY, "name", "\t  %s key", name);
+		else
+			print_string(PRINT_ANY, "name", "\t  %s ", name);
+	}
+
+	if (tb[P4TC_EXT_PARAMS_ID]) {
+		__u32 *id;
+
+		id = RTA_DATA(tb[P4TC_EXT_PARAMS_ID]);
+		print_uint(PRINT_ANY, "id", " id %u ", *id);
+	}
+
+	if (tb[P4TC_EXT_PARAMS_TYPE]) {
+		__u32 contain_id;
+
+		contain_id = *((__u32 *) RTA_DATA(tb[P4TC_EXT_PARAMS_TYPE]));
+		t = get_p4type_byid(contain_id);
+		if (!t) {
+			fprintf(stderr, "Unknown param type %d\n", contain_id);
+			return -1;
+		}
+
+		print_string(PRINT_ANY, "type", "type %s", t->name);
+	} else {
+		fprintf(stderr, "Must specify params type");
+		return -1;
+	}
+
+	if (tb[P4TC_EXT_PARAMS_VALUE])
+		p4tc_extern_inst_print_param_value(f, t, tb[P4TC_EXT_PARAMS_VALUE],
+						   RTA_DATA(tb[P4TC_EXT_PARAMS_VALUE]));
+
+	print_nl();
+
+	return 0;
+}
+
+int p4tc_extern_inst_print_params(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
+	int i;
+
+	parse_rtattr_nested(tb, P4TC_MSGBATCH_SIZE, arg);
+
+	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
+		open_json_object(NULL);
+		p4tc_extern_inst_print_param(f, tb[i]);
+		close_json_object();
+	}
+
+	return 0;
+}
+
+static int p4tc_extern_inst_print_method(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_TMPL_EXT_INST_METHOD_MAX + 1];
+
+	parse_rtattr_nested(tb, P4TC_TMPL_EXT_INST_METHOD_MAX, arg);
+
+	if (tb[P4TC_TMPL_EXT_INST_METHOD_NAME]) {
+		char *name;
+
+		name = RTA_DATA(tb[P4TC_TMPL_EXT_INST_METHOD_NAME]);
+		print_string(PRINT_ANY, "name", "\t  %s ", name);
+	}
+
+	if (tb[P4TC_TMPL_EXT_INST_METHOD_ID]) {
+		__u32 *id;
+
+		id = RTA_DATA(tb[P4TC_TMPL_EXT_INST_METHOD_ID]);
+		print_uint(PRINT_ANY, "id", " id %u ", *id);
+	}
+	print_nl();
+
+	if (tb[P4TC_TMPL_EXT_INST_METHOD_PARAMS]) {
+		print_string(PRINT_FP, NULL, "\t  Params:\n", NULL);
+		print_nl();
+		open_json_array(PRINT_JSON, "params");
+		p4tc_extern_inst_print_params(tb[P4TC_TMPL_EXT_INST_METHOD_PARAMS],
+					      f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	return 0;
+}
+
+static int p4tc_extern_inst_print_methods(struct rtattr *arg, FILE *f)
+{
+	struct rtattr *tb[P4TC_MSGBATCH_SIZE + 1];
+	int i;
+
+	parse_rtattr_nested(tb, P4TC_MSGBATCH_SIZE, arg);
+
+	for (i = 1; i < P4TC_MSGBATCH_SIZE + 1 && tb[i]; i++) {
+		open_json_object(NULL);
+		p4tc_extern_inst_print_method(tb[i], f);
+		close_json_object();
+		print_nl();
+	}
+
+	return 0;
+}
+
+static int print_extern_inst_template(struct nlmsghdr *n, struct rtattr *arg,
+				      __u32 extid, __u32 instid, FILE *f)
+{
+	struct rtattr *tb[P4TC_TMPL_EXT_INST_MAX + 1];
+	char *extname, *instname;
+
+	parse_rtattr_nested(tb, P4TC_TMPL_EXT_INST_MAX, arg);
+
+	if (tb[P4TC_TMPL_EXT_INST_EXT_NAME]) {
+		extname = RTA_DATA(tb[P4TC_TMPL_EXT_INST_EXT_NAME]);
+		print_string(PRINT_ANY, "extname",  "    extern name %s\n",
+			     extname);
+	}
+
+	if (tb[P4TC_TMPL_EXT_INST_NAME]) {
+		instname = RTA_DATA(tb[P4TC_TMPL_EXT_INST_NAME]);
+		print_string(PRINT_ANY, "extinstname",
+			     "    extern instance name %s\n", instname);
+	}
+
+	if (tb[P4TC_TMPL_EXT_INST_METHODS]) {
+		print_string(PRINT_FP, NULL, "    Methods: \n", NULL);
+		open_json_array(PRINT_JSON, "methods");
+		p4tc_extern_inst_print_methods(tb[P4TC_TMPL_EXT_INST_METHODS],
+					       f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	if (tb[P4TC_TMPL_EXT_INST_CONTROL_PARAMS]) {
+		print_string(PRINT_FP, NULL, "    Control params: \n", NULL);
+		open_json_array(PRINT_JSON, "control_params");
+		p4tc_extern_inst_print_params(tb[P4TC_TMPL_EXT_INST_CONTROL_PARAMS], f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	if (tb[P4TC_TMPL_EXT_INST_NUM_ELEMS]) {
+		__u32 *num_elems;
+
+		num_elems = RTA_DATA(tb[P4TC_TMPL_EXT_INST_NUM_ELEMS]);
+		print_uint(PRINT_ANY, "num_elems",
+			   "    Max number of elements %u", *num_elems);
+	}
+
+	if (extid)
+		print_uint(PRINT_ANY, "extid", "    extern id %u\n", extid);
+
+	if (instid)
+		print_uint(PRINT_ANY, "extinstid",
+			   "    extern instance id %u\n", instid);
+
+	return 0;
+}
+
+static int print_extern_template(struct nlmsghdr *n, struct rtattr *arg,
+				   __u32 extid, FILE *f)
+{
+	struct rtattr *tb[P4TC_TMPL_EXT_MAX + 1];
+	char *name;
+
+	parse_rtattr_nested(tb, P4TC_TMPL_EXT_MAX, arg);
+
+	if (tb[P4TC_TMPL_EXT_NAME]) {
+		name = RTA_DATA(tb[P4TC_TMPL_EXT_NAME]);
+		print_string(PRINT_ANY, "extname",  "    extern name %s\n", name);
+	}
+
+	if (tb[P4TC_TMPL_EXT_NUM_INSTS]) {
+		__u16 *num_insts;
+
+		num_insts = RTA_DATA(tb[P4TC_TMPL_EXT_NUM_INSTS]);
+		print_uint(PRINT_ANY, "num_insts",
+			   "    Max number of instances %u", *num_insts);
+	}
+
+	if (extid)
+		print_uint(PRINT_ANY, "extid", "    extern id %u\n", extid);
+
+
+	return 0;
+}
+
 static int print_hdrfield(struct rtattr *tb, __u32 parser_id,
 			   __u32 hdrfield_id, FILE *f)
 {
@@ -471,6 +690,31 @@ static int print_p4tmpl_1(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 				print_action_template(n, tb[P4TC_PARAMS], 0, f);
 		}
 		break;
+	case P4TC_OBJ_EXT:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_P4TC_TMPL_DEL && (n->nlmsg_flags & NLM_F_ROOT)) {
+			fprintf(stderr, "Not implemented yet\n");
+		} else {
+			if (tb[P4TC_PATH])
+				print_extern_template(n, tb[P4TC_PARAMS],
+						      ids[0], f);
+			else
+				print_extern_template(n, tb[P4TC_PARAMS], 0, f);
+		}
+		break;
+	case P4TC_OBJ_EXT_INST:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_P4TC_TMPL_DEL && (n->nlmsg_flags & NLM_F_ROOT)) {
+			fprintf(stderr, "Not implemented yet\n");
+		} else {
+			if (tb[P4TC_PATH])
+				print_extern_inst_template(n, tb[P4TC_PARAMS],
+							   ids[0], ids[1], f);
+			else
+				print_extern_inst_template(n, tb[P4TC_PARAMS],
+							   0, 0, f);
+		}
+		break;
 	default:
 		break;
 	}
@@ -543,12 +787,22 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 	case P4TC_OBJ_ACT:
 		print_string(PRINT_ANY, "obj", "template obj type %s\n",
 			     "action template");
+		break;
+	case P4TC_OBJ_EXT:
+		print_string(PRINT_ANY, "obj", "template obj type %s\n",
+			     "extern");
+		break;
+	case P4TC_OBJ_EXT_INST:
+		print_string(PRINT_ANY, "obj", "template obj type %s\n",
+			     "extern instance");
+		break;
 	}
 
-	if (tb[P4TC_ROOT_PNAME]) {
+	if (tb[P4TC_ROOT_PNAME] ) {
 		char *pname = RTA_DATA(tb[P4TC_ROOT_PNAME]);
 
-		pipe = p4_tc_import_json(pname);
+		if (t->obj != P4TC_OBJ_EXT)
+			pipe = p4_tc_import_json(pname);
 
 		print_string(PRINT_ANY, "pname", "pipeline name %s", pname);
 		print_nl();
@@ -730,6 +984,567 @@ static int parse_hdrfield_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	*argv_p = argv;
 
 	return pipeid;
+}
+
+struct param {
+	char name[EXTPARAMNAMSIZ];
+	__u32 id;
+	__u32 type;
+	__u32 bitsz;
+	__u8 flags;
+};
+
+static int p4tc_exter_param_copy_name(char *dst_pname, char *src_pname)
+{
+	if (strnlen(src_pname, EXTPARAMNAMSIZ) == EXTPARAMNAMSIZ)
+		return -1;
+
+	strcpy(dst_pname, src_pname);
+
+	return 0;
+}
+
+static int p4tc_extern_method_copy_name(char *dst_methodname,
+					char *src_methodname)
+{
+	if (strnlen(src_methodname, METHODNAMSIZ) == METHODNAMSIZ)
+		return -1;
+
+	strcpy(dst_methodname, src_methodname);
+
+	return 0;
+}
+
+struct method {
+	char name[METHODNAMSIZ];
+	__u32 id;
+};
+
+static int p4tc_extern_inst_add_method(struct method *method, const char *value,
+				       struct nlmsghdr *n)
+{
+	addattrstrz(n, MAX_MSG, P4TC_TMPL_EXT_INST_METHOD_NAME, method->name);
+	if (method->id)
+		addattr32(n, MAX_MSG, P4TC_TMPL_EXT_INST_METHOD_ID, method->id);
+
+	return 0;
+}
+
+static int p4tc_extern_inst_add_param_val(struct param *param,
+					  const char *value, struct nlmsghdr *n)
+{
+	int ret = 0;
+	struct p4_type_value val;
+	struct rtattr *nest_val;
+	struct p4_type_s *t;
+	void *new_value;
+	void *new_mask;
+	__u32 sz;
+
+	t = get_p4type_byid(param->type);
+	if (!t) {
+		fprintf(stderr, "Unknown param type %d\n", param->type);
+		return -1;
+	}
+	sz = t->bitsz >> 3;
+	new_value = calloc(1, sz);
+	if (!new_value)
+		return -1;
+	new_mask = calloc(1, sz);
+	if (!new_mask) {
+		ret = -1;
+		goto free_value;
+	}
+
+	val.value = new_value;
+	val.mask = new_mask;
+	val.bitsz = param->bitsz;
+	if (t->parse_p4t &&
+	    t->parse_p4t(&val, value, 0) < 0) {
+		ret = -1;
+		goto free_mask;
+	}
+
+	nest_val = addattr_nest(n, MAX_MSG,
+				P4TC_EXT_PARAMS_VALUE | NLA_F_NESTED);
+	addattr_l(n, MAX_MSG, P4TC_EXT_PARAMS_VALUE_RAW, new_value, sz);
+	addattr_nest_end(n, nest_val);
+
+free_mask:
+	free(new_mask);
+free_value:
+	free(new_value);
+
+	return ret;
+}
+
+static int
+p4tc_extern_add_runtime_key_value(struct param *param, const char *value,
+				  struct nlmsghdr *n)
+{
+	addattrstrz(n, MAX_MSG, P4TC_EXT_PARAMS_NAME, param->name);
+
+	return p4tc_extern_inst_add_param_val(param, value, n);
+}
+
+static int p4tc_extern_inst_add_param(struct param *param, char ***argv_p,
+				      int *argc_p, bool runtime,
+				      struct nlmsghdr *n)
+{
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	int ret = 0;
+
+	addattrstrz(n, MAX_MSG, P4TC_EXT_PARAMS_NAME, param->name);
+	if (param->id)
+		addattr32(n, MAX_MSG, P4TC_EXT_PARAMS_ID, param->id);
+	if (param->type)
+		addattr32(n, MAX_MSG, P4TC_EXT_PARAMS_TYPE, param->type);
+	if (param->bitsz)
+		addattr16(n, MAX_MSG, P4TC_EXT_PARAMS_BITSZ, param->type);
+	if (param->flags)
+		addattr8(n, MAX_MSG, P4TC_EXT_PARAMS_FLAGS, param->flags);
+
+	if (runtime) {
+		char *value = *argv;
+
+		if (p4tc_extern_inst_add_param_val(param, value, n) < 0)
+			return -1;
+	} else {
+		if (argc && strcmp(*argv, "default_value") == 0) {
+			NEXT_ARG();
+			if (p4tc_extern_inst_add_param_val(param, *argv, n) < 0)
+				return -1;
+			argv++;
+			argc--;
+		}
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return ret;
+}
+
+int p4tc_extern_parse_inst_param(int *argc_p, char ***argv_p, bool runtime,
+				 int *parms_count,
+				 struct extern_insts_list *inst,
+				 struct nlmsghdr *n)
+{
+	struct extern_insts_data *param_data = NULL;
+	struct param param = {0};
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct rtattr *tail;
+	int err = 0;
+
+	if (strcmp(*argv, "tc_key") == 0)
+		param.flags |= P4TC_EXT_PARAMS_FLAG_ISKEY;
+	else if (strcmp(*argv, "tc_data_scalar") == 0)
+		param.flags |= P4TC_EXT_PARAMS_FLAG_IS_DATASCALAR;
+
+	NEXT_ARG();
+	if (p4tc_exter_param_copy_name(param.name, *argv) < 0) {
+		fprintf(stderr, "Param name too big");
+		return -E2BIG;
+	}
+
+	if (inst)
+		param_data = p4tc_find_extern_data(inst, param.name);
+
+	if (param_data) {
+		struct p4_type_s *t;
+
+		t = get_p4type_byarg(param_data->type, &param.bitsz);
+		if (!t) {
+			fprintf(stderr, "Invalid type %s\n", param_data->type);
+			return -1;
+		}
+		param.type = t->containid;
+
+		param.id = param_data->id;
+	} else if (param.flags & P4TC_EXT_PARAMS_FLAG_ISKEY) {
+		struct p4_type_s *t;
+
+		t = get_p4type_byname("bit32");
+		param.type = t->containid;
+		param.bitsz = t->bitsz;
+	}
+
+	NEXT_ARG();
+
+	/* If user stil wants to specify type and id, let them overwrite it */
+	while (argc > 0) {
+		if (strcmp(*argv, "type") == 0) {
+			struct p4_type_s *t;
+
+			NEXT_ARG();
+			t = get_p4type_byarg(*argv, &param.bitsz);
+			if (!t) {
+				fprintf(stderr, "Invalid type %s\n", *argv);
+				return -1;
+			}
+			param.type = t->containid;
+		} else if (strcmp(*argv, "id") == 0) {
+			__u32 id;
+
+			NEXT_ARG();
+			if (get_u32(&id, *argv, 10)) {
+				fprintf(stderr, "Invalid id %s\n",
+					*argv);
+				return -1;
+			}
+			param.id = id;
+		} else {
+			break;
+		}
+		argv++;
+		argc--;
+	}
+
+	if (runtime && param.flags & P4TC_EXT_PARAMS_FLAG_ISKEY) {
+		err = p4tc_extern_add_runtime_key_value(&param, *argv, n);
+		if (err < 0)
+			return err;
+
+		goto out;
+	}
+
+	tail = addattr_nest(n, MAX_MSG, *parms_count | NLA_F_NESTED);
+	if (p4tc_extern_inst_add_param(&param, &argv, &argc, runtime, n) < 0)
+		return -1;
+
+	addattr_nest_end(n, tail);
+	(*parms_count)++;
+
+out:
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return err;
+}
+
+static int parse_extern_inst_params(int *argc_p, char ***argv_p,
+				    struct nlmsghdr *n)
+{
+	struct rtattr *tail = NULL;
+	char **argv = *argv_p;
+	int parms_count = 1;
+	int argc = *argc_p;
+
+	while (argc > 0) {
+		if (strcmp(*argv, "param") == 0 ||
+		    strcmp(*argv, "tc_key") == 0 ||
+		    strcmp(*argv, "tc_data_scalar") == 0) {
+			if (p4tc_extern_parse_inst_param(&argc, &argv, false,
+							 &parms_count, NULL, n) < 0)
+				return -1;
+
+			if (argc && (strcmp(*argv, "param") == 0 ||
+				     strcmp(*argv, "tc_key") == 0 ||
+				     strcmp(*argv, "tc_data_scalar") == 0))
+				continue;
+		} else {
+			break;
+		}
+	}
+	if (tail)
+		addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int p4tc_extern_parse_inst_method(int *argc_p, char ***argv_p,
+					 int *methods_count, struct nlmsghdr *n)
+{
+	struct rtattr *tail = NULL;
+	struct method method = {0};
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct rtattr *tail2;
+
+	NEXT_ARG();
+	tail2 = addattr_nest(n, MAX_MSG, *methods_count | NLA_F_NESTED);
+	if (p4tc_extern_method_copy_name(method.name, *argv) < 0) {
+		fprintf(stderr, "Param name too big");
+		return -E2BIG;
+	}
+
+	NEXT_ARG();
+
+	while (argc > 0) {
+		if (strcmp(*argv, "method_id") == 0) {
+			__u32 id;
+
+			NEXT_ARG();
+			if (get_u32(&id, *argv, 0)) {
+				fprintf(stderr, "Invalid id %s\n",
+					*argv);
+				return -1;
+			}
+			method.id = id;
+		} else if (strcmp(*argv, "param") == 0 ||
+			   strcmp(*argv, "tc_key") == 0 ||
+			   strcmp(*argv, "tc_data_scalar") == 0) {
+			if (!tail) {
+				int type;
+
+				type = P4TC_TMPL_EXT_INST_METHOD_PARAMS | NLA_F_NESTED;
+				tail = addattr_nest(n, MAX_MSG, type);
+			}
+
+			if (parse_extern_inst_params(&argc, &argv, n) < 0)
+				return -1;
+
+			if (argc && strcmp(*argv, "method") == 0)
+				break;
+			if (argc && strcmp(*argv, "control_path") == 0)
+				break;
+		} else {
+			break;
+		}
+		argv++;
+		argc--;
+	}
+
+	if (tail)
+		addattr_nest_end(n, tail);
+
+	if (p4tc_extern_inst_add_method(&method, *argv, n) < 0)
+		return -1;
+
+	addattr_nest_end(n, tail2);
+	(*methods_count)++;
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int parse_extern_inst_methods(int *argc_p, char ***argv_p,
+				     struct nlmsghdr *n)
+{
+	struct rtattr *tail = NULL;
+	char **argv = *argv_p;
+	int parms_count = 1;
+	int argc = *argc_p;
+
+	while (argc > 0) {
+		if (strcmp(*argv, "method") == 0) {
+			if (!tail) {
+				__u32 attrid = P4TC_TMPL_EXT_INST_METHODS | NLA_F_NESTED;
+
+				tail = addattr_nest(n, MAX_MSG, attrid);
+			}
+
+			if (p4tc_extern_parse_inst_method(&argc, &argv,
+							  &parms_count, n) < 0)
+				return -1;
+
+			if (argc && strcmp(*argv, "method") == 0)
+				continue;
+			if (argc && strcmp(*argv, "control_path") == 0)
+				break;
+		} else {
+			break;
+		}
+		argv++;
+		argc--;
+	}
+	if (tail)
+		addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int parse_extern_inst_data(int *argc_p, char ***argv_p,
+				  struct nlmsghdr *n, char *p4tcpath[],
+				  int cmd, unsigned int *flags)
+{
+	struct rtattr *tail = NULL, *tail_control = NULL;
+	__u32 extid = 0, instid = 0, pipeid = 0;
+	bool parsed_num_elems = false;
+	struct rtattr *count = NULL;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	char *extname, *instname;
+	__u32 ids[2] = {0};
+	__u32 num_elems = 0;
+
+	extname = p4tcpath[PATH_EXTNAME_IDX];
+	instname = p4tcpath[PATH_EXTINSTNAME_IDX];
+
+	while (argc > 0) {
+		if (strcmp(*argv, "extid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&extid, *argv, 0) < 0)
+				return -1;
+		} else if (strcmp(*argv, "instid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&instid, *argv, 0) < 0)
+				return -1;
+		} else if (strcmp(*argv, "pipeid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&pipeid, *argv, 0) < 0)
+				return -1;
+		} else if (strcmp(*argv, "numelems") == 0) {
+			NEXT_ARG();
+			if (get_u32(&num_elems, *argv, 0) < 0)
+				return -1;
+			parsed_num_elems = true;
+		} else if (strcmp(*argv, "control_path") == 0) {
+			NEXT_ARG();
+			if (strcmp(*argv, "param") && strcmp(*argv, "tc_key") &&
+			    strcmp(*argv, "tc_data_scalar")) {
+				fprintf(stderr,
+					"Illegal arg %s after control_path\n",
+					*argv);
+				return -1;
+			}
+			if (!count)
+				count = addattr_nest(n, MAX_MSG,
+						     1 | NLA_F_NESTED);
+			if (!tail)
+				tail = addattr_nest(n, MAX_MSG,
+						    P4TC_PARAMS | NLA_F_NESTED);
+
+			if (!tail_control) {
+				int attr_id;
+
+				attr_id = P4TC_TMPL_EXT_INST_CONTROL_PARAMS | NLA_F_NESTED;
+				tail_control = addattr_nest(n, MAX_MSG,
+							    attr_id);
+			}
+			if (parse_extern_inst_params(&argc, &argv, n) < 0)
+				return -1;
+		} else if (strcmp(*argv, "method") == 0) {
+			if (!count)
+				count = addattr_nest(n, MAX_MSG,
+						     1 | NLA_F_NESTED);
+
+			if (!tail)
+				tail = addattr_nest(n, MAX_MSG,
+						    P4TC_PARAMS | NLA_F_NESTED);
+
+			if (parse_extern_inst_methods(&argc, &argv, n) < 0)
+				return -1;
+
+			if (argc && strcmp(*argv, "control_path") == 0)
+				continue;
+		}
+
+		argv++;
+		argc--;
+	}
+
+	if (tail_control)
+		addattr_nest_end(n, tail_control);
+
+	if (!instname && !instid)
+		*flags |= NLM_F_ROOT;
+
+	/* Always add count nest unless it's a dump */
+	if (!count && !((*flags & NLM_F_ROOT) && cmd == RTM_P4TC_TMPL_GET))
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+
+	if (!tail)
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	if (extname)
+		addattrstrz(n, MAX_MSG, P4TC_TMPL_EXT_INST_EXT_NAME, extname);
+
+	if (instname)
+		addattrstrz(n, MAX_MSG, P4TC_TMPL_EXT_INST_NAME, instname);
+
+	if (parsed_num_elems)
+		addattr32(n, MAX_MSG, P4TC_TMPL_EXT_INST_NUM_ELEMS,
+			  num_elems);
+
+	addattr_nest_end(n, tail);
+
+	ids[0] = extid;
+	ids[1] = instid;
+	if (extid || instid)
+		addattr_l(n, MAX_MSG, P4TC_PATH, ids, sizeof(ids));
+
+	if (count)
+		addattr_nest_end(n, count);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
+}
+
+static int parse_extern_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			     char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	struct rtattr *tail = NULL, *count;
+	bool parsed_num_insts = false;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	__u16 numinsts = 0;
+	__u32 ext_id = 0;
+	char *pname;
+	char *extname;
+
+	pname = p4tcpath[PATH_PNAME_IDX];
+	extname = p4tcpath[PATH_EXTNAME_IDX];
+
+	if (strncmp(pname, "root", PIPELINENAMSIZ)) {
+		fprintf(stderr, "Pipeline name for extern should be root\n");
+		return -1;
+	}
+
+	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+
+	while (argc > 0) {
+		if (strcmp(*argv, "ext_id") == 0) {
+			NEXT_ARG();
+			if (get_u32(&ext_id, *argv, 0) < 0)
+				return -1;
+		} else if (strcmp(*argv, "numinstances") == 0) {
+			NEXT_ARG();
+			if (get_u16(&numinsts, *argv, 0) < 0)
+				return -1;
+			parsed_num_insts = true;
+		}
+
+		argv++;
+		argc--;
+	}
+
+	if (extname || ext_id)
+		tail = tail ?: addattr_nest(n, MAX_MSG,
+					    P4TC_PARAMS | NLA_F_NESTED);
+	else
+		*flags |= NLM_F_ROOT;
+
+	if (extname)
+		addattrstrz(n, MAX_MSG, P4TC_TMPL_EXT_NAME, extname);
+
+	if (parsed_num_insts)
+		addattr16(n, MAX_MSG, P4TC_TMPL_EXT_NUM_INSTS, numinsts);
+
+	if (tail)
+		addattr_nest_end(n, tail);
+
+	if (ext_id)
+		addattr32(n, MAX_MSG, P4TC_PATH, ext_id);
+
+	addattr_nest_end(n, count);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
 }
 
 static int parse_tmpl_table_action(int *argc_p, char ***argv_p,
@@ -1194,6 +2009,20 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 			return -1;
 		req.t.pipeid = pipeid;
 
+		break;
+	case P4TC_OBJ_EXT:
+		ret = parse_extern_data(&argc, &argv, &req.n, p4tcpath, cmd,
+					&flags);
+		if (ret < 0)
+			return -1;
+		req.t.pipeid = 0;
+		break;
+	case P4TC_OBJ_EXT_INST:
+		ret = parse_extern_inst_data(&argc, &argv, &req.n, p4tcpath,
+					     cmd, &flags);
+		if (ret < 0)
+			return -1;
+		req.t.pipeid = ret;
 		break;
 	default:
 		fprintf(stderr, "Unknown template object type %s\n",

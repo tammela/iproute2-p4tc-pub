@@ -42,6 +42,8 @@ int print_p4runtime(struct nlmsghdr *n, void *arg)
 	switch (t->obj) {
 	case P4TC_OBJ_RUNTIME_TABLE:
 		return print_table(n, arg);
+	case P4TC_OBJ_RUNTIME_EXTERN:
+		return print_extern(n, arg);
 	default:
 		return 0;
 	}
@@ -96,6 +98,13 @@ static int tc_table_cmd(int cmd, unsigned int flags, int *argc_p, char ***argv_p
 		if (ret < 0)
 			return ret;
 		break;
+	case P4TC_OBJ_RUNTIME_EXTERN: {
+		ret = parse_p4tc_extern(&req.n, cmd, &flags, &argc, &argv,
+					(const char **)p4tcpath);
+		if (ret < 0)
+			return ret;
+		break;
+	}
 	default:
 		fprintf(stderr, "Unknown runtime object");
 		return -1;
