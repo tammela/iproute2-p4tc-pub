@@ -27,6 +27,7 @@
 #include "utils.h"
 #include "tc_common.h"
 #include "tc_util.h"
+#include "p4tc_common.h"
 #include "p4_types.h"
 
 #include "p4tc_common.h"
@@ -244,6 +245,7 @@ static int p4tc_print_tmpl_table_acts_list(struct rtattr *arg, FILE *f)
 static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 			    struct rtattr *arg, __u32 tbl_id, FILE *f)
 {
+	struct table *table = NULL;
 	struct rtattr *tb[P4TC_TABLE_MAX + 1];
 
 	parse_rtattr_nested(tb, P4TC_TABLE_MAX, arg);
@@ -322,6 +324,34 @@ static int p4tc_print_table(struct nlmsghdr *n, struct p4_tc_pipeline *pipe,
 		p4tc_print_tmpl_table_acts_list(tb[P4TC_TABLE_ACTS_LIST], f);
 		print_nl();
 		close_json_array(PRINT_JSON, NULL);
+	}
+
+	if (tb[P4TC_TABLE_CONST_ENTRY]) {
+		struct rtattr *tb_nest[P4TC_MAX + 1];
+
+		if (tbl_id) {
+			if (pipe) {
+				table = p4tc_find_table_byid(pipe, tbl_id);
+				if (!table) {
+					fprintf(stderr, "Unable to find table id %d\n",
+						tbl_id);
+					return -1;
+				}
+			}
+		}
+
+		parse_rtattr_nested(tb_nest, P4TC_MAX,
+				    tb[P4TC_TABLE_CONST_ENTRY]);
+
+		if (tb_nest[P4TC_PARAMS]) {
+			print_string(PRINT_FP, NULL, "    entry:\n",
+				     NULL);
+			open_json_object("entry");
+			print_nl();
+			print_table_entry(n, tb_nest[P4TC_PARAMS], f,
+					  "        ", table, tbl_id);
+			close_json_object();
+		}
 	}
 
 	print_nl();
@@ -926,13 +956,25 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 	__u32 tbl_id = 0;
 	__u32 pipeid = 0;
 	int ret = 0;
-	char *cbname, *tblname;
+	char *pname, *cbname, *tblname;
 
+	pname = p4tcpath[PATH_PNAME_IDX];
 	cbname = p4tcpath[PATH_CBNAME_IDX];
 	tblname = p4tcpath[PATH_TBLNAME_IDX];
 
-	count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
-	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	if (cmd != RTM_P4TC_TMPL_GET) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     TABLENAMSIZ);
+		if (ret < 0) {
+			fprintf(stderr, "table name too long\n");
+			return -1;
+		}
+	}
 
 	while (argc > 0) {
 		if (cmd == RTM_P4TC_TMPL_CREATE) {
@@ -1032,6 +1074,30 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 							       P4TC_TABLE_ACTS_LIST) < 0)
 					return -1;
 				continue;
+			} else if (strcmp(*argv, "entry") == 0) {
+				struct parse_state state = {0};
+				__u32 offset = 0;
+				struct rtattr *entries;
+				__u32 tmp_ids[2];
+
+				entries = addattr_nest(n, MAX_MSG,
+						       P4TC_TABLE_CONST_ENTRY | NLA_F_NESTED);
+
+				NEXT_ARG();
+				ret = parse_new_table_entry(&argc, &argv, n,
+							    &state, p4tcpath,
+							    pname, tmp_ids,
+							    &offset);
+				if (ret < 0)
+					return -1;
+
+				if (state.has_parsed_keys) {
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_KEY_BLOB,
+						  state.keyblob, offset);
+					addattr_l(n, MAX_MSG, P4TC_ENTRY_MASK_BLOB,
+						  state.maskblob, offset);
+				}
+				addattr_nest_end(n, entries);
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
@@ -1047,6 +1113,26 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 				NEXT_ARG();
 				if (get_u32(&pipeid, *argv, 10) < 0)
 					return -1;
+			} else if (cmd == RTM_P4TC_TMPL_DEL &&
+				   strcmp(*argv, "default_hit_action") == 0) {
+				struct rtattr *nest_hit_act;
+
+				argv++;
+				argc--;
+				nest_hit_act = addattr_nest(n, MAX_MSG,
+							    P4TC_TABLE_DEFAULT_HIT | NLA_F_NESTED);
+				addattr_nest_end(n, nest_hit_act);
+				continue;
+			} else if (cmd == RTM_P4TC_TMPL_DEL &&
+				   strcmp(*argv, "default_miss_action") == 0) {
+				struct rtattr *nest_miss_act;
+
+				argv++;
+				argc--;
+				nest_miss_act = addattr_nest(n, MAX_MSG,
+							    P4TC_TABLE_DEFAULT_MISS | NLA_F_NESTED);
+				addattr_nest_end(n, nest_miss_act);
+				continue;
 			} else {
 				fprintf(stderr, "Unknown arg %s\n", *argv);
 				return -1;
@@ -1056,32 +1142,29 @@ static int parse_table_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 		argc--;
 	}
 
-	if (cmd == RTM_P4TC_TMPL_CREATE)
+	if (!cbname && !tblname && !tbl_id) {
+		*flags |= NLM_F_ROOT;
+	} else if (cmd == RTM_P4TC_TMPL_GET) {
+		count = addattr_nest(n, MAX_MSG, 1 | NLA_F_NESTED);
+		tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+	}
+
+	if (cmd == RTM_P4TC_TMPL_CREATE && table.tbl_flags)
 		addattr_l(n, MAX_MSG, P4TC_TABLE_INFO, &table,
 			  sizeof(table));
 
 	ret = 0;
-	if (cbname && tblname) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     TABLENAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table name too long\n");
-			return -1;
-		}
-	}
-
 	if (!STR_IS_EMPTY(full_tblname))
 		addattrstrz(n, MAX_MSG, P4TC_TABLE_NAME, full_tblname);
 
-	addattr_nest_end(n, tail);
-
-	if (!cbname && !tblname && !tbl_id)
-		*flags |= NLM_F_ROOT;
+	if (tail)
+		addattr_nest_end(n, tail);
 
 	if (tbl_id)
 		addattr32(n, MAX_MSG, P4TC_PATH, tbl_id);
 
-	addattr_nest_end(n, count);
+	if (count)
+		addattr_nest_end(n, count);
 
 out:
 	*argc_p = argc;

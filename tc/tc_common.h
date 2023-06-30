@@ -12,14 +12,18 @@ int do_filter(int argc, char **argv);
 int do_chain(int argc, char **argv);
 int do_action(int argc, char **argv);
 int do_p4tmpl(int argc, char **argv);
+int do_p4_runtime(int argc, char **argv);
 int do_tcmonitor(int argc, char **argv);
 int do_exec(int argc, char **argv);
 
 int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *actname,
 	       struct nlmsghdr *n);
+int parse_dyna_tbl_act(int *argc_p, char ***argv_p, char **actname_p,
+		       const bool introspect_global, struct nlmsghdr *n);
 int print_dyna_parms(struct action_util *au, struct rtattr *arg, FILE *f);
 int print_p4tmpl(struct nlmsghdr *n, void *arg);
 int print_action(struct nlmsghdr *n, void *arg);
+int print_p4runtime(struct nlmsghdr *n, void *arg);
 int print_filter(struct nlmsghdr *n, void *arg);
 int print_qdisc(struct nlmsghdr *n, void *arg);
 int print_class(struct nlmsghdr *n, void *arg);
