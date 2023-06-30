@@ -22,6 +22,7 @@
 
 #include "utils.h"
 #include "tc_util.h"
+#include "bpf_util.h"
 
 static void explain(void)
 {
@@ -31,6 +32,85 @@ static void explain(void)
 		"       ACTION_SPEC := ... look at individual actions\n"
 		"\n"
 		"NOTE: CLASSID is parsed as hexadecimal input.\n");
+}
+
+static void p4tc_ebpf_cb(void *nl, int fd, const char *annotation)
+{
+	addattr32(nl, MAX_MSG, TCA_P4_PROG_FD, fd);
+	addattrstrz(nl, MAX_MSG, TCA_P4_PROG_NAME, annotation);
+}
+
+static const struct bpf_cfg_ops bpf_cb_ops = {
+	.ebpf_cb = p4tc_ebpf_cb,
+};
+
+static int p4_parse_prog_opt(int *argc_p, char ***argv_p, struct nlmsghdr *n)
+{
+	struct bpf_cfg_in cfg = {};
+	char **argv = *argv_p;
+	int argc = *argc_p;
+
+	NEXT_ARG();
+
+	if (strcmp(*argv, "type") == 0) {
+		NEXT_ARG();
+		if (strcmp(*argv, "xdp") == 0) {
+			cfg.type = BPF_PROG_TYPE_XDP;
+
+			/* Look ahead to see if obj is pinned */
+			/*
+			NEXT_ARG_FWD();
+			if (strcmp(*argv, "pinned") != 0) {
+				fprintf(stderr,
+					"XDP bpf object must be pinned\n");
+				return -1;
+			}
+			PREV_ARG();
+			*/
+		} else if (strcmp(*argv, "tc") == 0) {
+			cfg.type = BPF_PROG_TYPE_SCHED_ACT;
+		} else {
+			fprintf(stderr,
+				"Unknown prog type %s\n",
+				*argv);
+			return -1;
+		}
+		NEXT_ARG();
+	}
+
+	cfg.argc = argc;
+	cfg.argv = argv;
+
+	if (bpf_parse_and_load_common(&cfg, &bpf_cb_ops, n) < 0) {
+		fprintf(stderr,
+			"Unable to parse bpf command line\n");
+		return -1;
+	}
+
+	addattr32(n, MAX_MSG, TCA_P4_PROG_TYPE, cfg.type);
+
+	argc = cfg.argc;
+	argv = cfg.argv;
+
+	if (!cfg.type) {
+		fprintf(stderr, "Must specify bpf prog type\n");
+		return -1;
+	}
+
+	if (cfg.type == BPF_PROG_TYPE_XDP) {
+		NEXT_ARG();
+
+		if (strcmp(*argv, "xdp_cookie") == 0) {
+			NEXT_ARG();
+			addattr32(n, MAX_MSG, TCA_P4_PROG_COOKIE,
+				  atoi(*argv));
+		}
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
 }
 
 static int p4_parse_opt(struct filter_util *qu, char *handle,
@@ -80,7 +160,9 @@ static int p4_parse_opt(struct filter_util *qu, char *handle,
 
 			pname = *argv;
 			addattrstrz(n, MAX_MSG, TCA_P4_PNAME, *argv);
-
+		} else if (strcmp(*argv, "prog") == 0) {
+			if (p4_parse_prog_opt(&argc, &argv, n) < 0)
+				return -1;
 		} else if (strcmp(*argv, "help") == 0) {
 			explain();
 			return -1;
