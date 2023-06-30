@@ -122,6 +122,8 @@ struct parse_state {
 	__u8 maskblob[P4TC_MAX_KEYSZ];
 };
 
+int p4tc_pipeline_get_id(const char *pname, __u32 *pipeid);
+
 #ifdef P4TC
 int do_p4tmpl(int argc, char **argv);
 int print_p4tmpl(struct nlmsghdr *n, void *arg);
