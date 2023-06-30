@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "tc_util.h"
 #include "tc_common.h"
+#include "p4tc_common.h"
 
 
 static void usage(void) __attribute__((noreturn));
@@ -55,6 +56,14 @@ static int accept_tcmsg(struct rtnl_ctrl_data *ctrl,
 	if (n->nlmsg_type == RTM_GETACTION || n->nlmsg_type == RTM_NEWACTION ||
 	    n->nlmsg_type == RTM_DELACTION) {
 		print_action(n, arg);
+		return 0;
+	}
+
+	if (n->nlmsg_type == RTM_CREATEP4TEMPLATE ||
+	    n->nlmsg_type == RTM_UPDATEP4TEMPLATE ||
+	    n->nlmsg_type == RTM_GETP4TEMPLATE ||
+	    n->nlmsg_type == RTM_DELP4TEMPLATE) {
+		print_p4tmpl(n, arg);
 		return 0;
 	}
 	if (n->nlmsg_type != NLMSG_ERROR && n->nlmsg_type != NLMSG_NOOP &&
