@@ -158,6 +158,8 @@ int print_table(struct nlmsghdr *n, void *arg);
 int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
 			   char *p4tcpath[], struct nlmsghdr *n,
 			   unsigned int *flags);
+int parse_table_default_action(int *argc_p, char ***argv_p,
+			       struct nlmsghdr *n, __u32 attr_id);
 
 int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
 		       int *argc_p, char ***argv_p, const char **p4tcpath);

@@ -362,7 +362,10 @@ int parse_action(int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n)
 
 		memset(k, 0, sizeof(k));
 
-		if (strcmp(*argv, "preactions") == 0 ||
+		if (strcmp(*argv, "keys") == 0 ||
+		    strcmp(*argv, "table") == 0 ||
+		    strcmp(*argv, "preactions") == 0 ||
+		    strcmp(*argv, "table_acts") == 0 ||
 		    strcmp(*argv, "postactions") == 0)
 			break;
 
