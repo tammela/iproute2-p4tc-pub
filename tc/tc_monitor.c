@@ -57,6 +57,13 @@ static int accept_tcmsg(struct rtnl_ctrl_data *ctrl,
 		print_action(n, arg);
 		return 0;
 	}
+
+	if (n->nlmsg_type == RTM_P4TC_TMPL_CREATE ||
+	    n->nlmsg_type == RTM_P4TC_TMPL_GET ||
+	    n->nlmsg_type == RTM_P4TC_TMPL_DEL) {
+		print_p4tmpl(n, arg);
+		return 0;
+	}
 	if (n->nlmsg_type != NLMSG_ERROR && n->nlmsg_type != NLMSG_NOOP &&
 	    n->nlmsg_type != NLMSG_DONE) {
 		fprintf(stderr, "Unknown message: length %08d type %08x flags %08x\n",
