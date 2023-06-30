@@ -224,6 +224,30 @@ static int parse_p4t_be64_val(struct p4_type_value *val, const char *arg,
 	return 0;
 }
 
+#define ULL(X) X##ULL
+#define UL(X) X##UL
+
+#define BIT_ULL(nr)		(ULL(1) << (nr))
+#define BIT_MASK(nr)		(UL(1) << ((nr) % BITS_PER_LONG))
+#define BIT_WORD(nr)		((nr) / BITS_PER_LONG)
+#define BIT_ULL_MASK(nr)	(ULL(1) << ((nr) % BITS_PER_LONG_LONG))
+#define BIT_ULL_WORD(nr)	((nr) / BITS_PER_LONG_LONG)
+#define BITS_PER_BYTE		8
+#define BITS_PER_LONG 64
+
+#define BUILD_BUG_ON_ZERO(e) (0)
+
+#define GENMASK_INPUT_CHECK(h, l) \
+		(BUILD_BUG_ON_ZERO(__builtin_choose_expr( \
+				   __is_constexpr((l) > (h)), (l) > (h), 0)))
+
+#define __GENMASK(h, l) \
+		(((~UL(0)) - (UL(1) << (l)) + 1) & \
+			 (~UL(0) >> (BITS_PER_LONG - 1 - (h))))
+
+#define GENMASK(h, l) \
+		(GENMASK_INPUT_CHECK(h, l) + __GENMASK(h, l))
+
 static int parse_p4t_ipv4_val(struct p4_type_value *val, const char *arg,
 			      int base)
 {
@@ -235,7 +259,11 @@ static int parse_p4t_ipv4_val(struct p4_type_value *val, const char *arg,
 		return -1;
 
 	memcpy(newaddr, iaddr.data, sizeof(__u32));
-	*new_mask = htonl(~0u << (32 - iaddr.bitlen));
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	*new_mask = ~((__u32)(GENMASK(31, iaddr.bitlen)));
+#else
+	*new_mask = ~((__u32)(GENMASK(31, 31 - iaddr.bitlen -1)));
+#endif
 
 	return 0;
 }
@@ -412,6 +440,23 @@ static void print_p4t_mac_val(const char *name, const char *json_name,
 	print_string(PRINT_ANY, json_name, buf, b1);
 }
 
+static __u8 fls(__u32 mask_val)
+{
+	int i;
+	__u8 *mask_u8 = (__u8 *)&mask_val;
+	__u8 ffl = 0;
+
+	for (i = 0; i < sizeof(__u32); i++) {
+		__u32 mask_tmp = mask_u8[i];
+		while (mask_tmp) {
+			mask_tmp >>= 1;
+			ffl++;
+		}
+	}
+
+	return ffl;
+}
+
 static void print_p4t_ipv4_val(const char *name, const char *json_name,
 			       struct p4_type_value *val, FILE *f)
 {
@@ -426,8 +471,12 @@ static void print_p4t_ipv4_val(const char *name, const char *json_name,
 	strncat(buf, " %s", SPRINT_BSIZE);
 
 	mask_val = htonl((*(__be32 *)val->mask));
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+	len = fls(mask_val);
+#else
 	len = ffs(mask_val);
-	len = len ? 33 - len : 0;
+#endif
 	snprintf(buf2, sizeof(buf2), "%s/%d",
 		 format_host_r(AF_INET, 4, addr, buf1, sizeof(buf1)),
 		 len);
