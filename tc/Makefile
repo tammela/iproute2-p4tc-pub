@@ -95,6 +95,9 @@ TCMODULES += q_hhf.o
 TCMODULES += q_clsact.o
 TCMODULES += e_bpf.o
 TCMODULES += f_matchall.o
+ifeq ($(HAVE_P4TC_LIBBPF),1)
+  P4OBJ += f_p4.o
+endif
 TCMODULES += q_cbs.o
 TCMODULES += q_etf.o
 TCMODULES += q_taprio.o
