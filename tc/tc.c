@@ -220,6 +220,8 @@ static int do_cmd(int argc, char **argv)
 		return do_tcmonitor(argc-1, argv+1);
 	if (matches(*argv, "exec") == 0)
 		return do_exec(argc-1, argv+1);
+	if (matches(*argv, "p4template") == 0)
+		return do_p4tmpl(argc-1, argv+1);
 	if (matches(*argv, "help") == 0) {
 		usage();
 		return 0;
@@ -353,7 +355,6 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	register_p4_types();
 	if (use_names && cls_names_init(conf_file)) {
 		ret = -1;
 		goto Exit;
