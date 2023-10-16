@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
+#include "tc_util.h"
+
 #define TCA_BUF_MAX	(64*1024)
 
 extern struct rtnl_handle rth;

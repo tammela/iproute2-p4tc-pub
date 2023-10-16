@@ -67,7 +67,7 @@ struct filter_util {
 
 struct action_util {
 	struct action_util *next;
-	char id[FILTER_NAMESZ];
+	char id[ACTNAMSIZ];
 	__u32 aid;
 	int (*parse_aopt)(const struct action_util *a, int *argc,
 			  char ***argv, int code, struct nlmsghdr *n);
