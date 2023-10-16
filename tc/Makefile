@@ -27,6 +27,7 @@ ifeq ($(HAVE_P4TC_LIBBPF),1)
   P4OBJ += p4tc_table.o
   P4OBJ += p4tc_filter_parser.o
   P4OBJ += p4tc_filter.o
+  P4OBJ += p4tc_extern.o
   CFLAGS += -DP4TC
 endif
 

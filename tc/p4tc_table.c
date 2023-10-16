@@ -237,6 +237,9 @@ int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		print_string(PRINT_ANY, "tmpl_created", "    tmpl created %s\n",
 			   "false");
 
+	if (tb[P4TC_ENTRY_COUNTER])
+		p4tc_print_one_extern(f, tb[P4TC_ENTRY_COUNTER], false);
+
 	print_nl();
 
 	return 0;
