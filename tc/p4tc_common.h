@@ -151,12 +151,16 @@ int parse_dyna_tbl_act(int *argc_p, char ***argv_p, char **actname_p,
 		       const char *tblname, const bool introspect_global,
 		       struct nlmsghdr *n, bool params_only);
 int print_dyna_parms(struct action_util *au, struct rtattr *arg, FILE *f);
+struct p4tc_json_actions_list *
+introspect_action_byname(struct p4tc_json_pipeline **pipe,
+			 const char **p4tcpath);
 
 struct p4tc_act_param {
 	char name[P4TC_ACT_PARAM_NAMSIZ];
 	struct p4_type_s *type;
 	__u32 id;
 	__u32 bitsz;
+	__u8 flags;
 };
 
 int dyna_add_param(struct p4tc_act_param *param, void *value, bool in_act,
