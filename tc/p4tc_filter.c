@@ -70,6 +70,7 @@ static bool comparable_types(struct p4_type_s *a, struct p4_type_s *b)
 enum p4tc_filter_name_expr_type {
 	P4TC_NAME_EXPR_KEYFIELD,
 	P4TC_NAME_EXPR_ACT_PARAM,
+	P4TC_NAME_EXPR_EXT_PARAM,
 	P4TC_NAME_EXPR_DEV,
 	P4TC_NAME_EXPR_IPV4,
 	P4TC_NAME_EXPR_IPV6,
@@ -106,6 +107,10 @@ union p4tc_filter_name_expr {
 	} act_param;
 	struct {
 		enum p4tc_filter_name_expr_type type;
+		struct p4tc_ext_param *data;
+	} ext_param;
+	struct {
+		enum p4tc_filter_name_expr_type type;
 		__u32 ifindex;
 	} dev;
 	struct {
@@ -119,6 +124,8 @@ union p4tc_filter_name_expr {
 #define PARAM_PNAME_IDX 2
 
 #define PARAM_KEY_PARAM_NAME_IDX 1
+
+#define PARAM_EXT_PARAM_NAME_IDX 2
 
 #define PARAM_ACT_CBNAME_IDX 2
 #define PARAM_ACT_ACTNAME_IDX 2
@@ -210,6 +217,42 @@ static int get_prefixed_act_param_type(struct p4tc_filter_ctx *ctx,
 	return 0;
 }
 
+static int get_prefixed_ext_param_type(struct p4tc_filter_ctx *ctx,
+				       struct p4tc_ext_param *param,
+				       const char *param_name)
+{
+	struct p4tc_json_extern_insts_list *inst = ctx->inst;
+	struct p4tc_json_extern_insts_data *param_data;
+	struct p4_type_s *t;
+
+	if (!inst) {
+		err_type("Instance introspection data missing");
+		return -1;
+	}
+
+	param_data = p4tc_json_find_extern_data(inst, param_name);
+	if (!param_data) {
+		err_type_fmt("Unable to find param %s in intros file",
+			     param_name);
+		return -1;
+	}
+
+	t = get_p4type_byarg(param_data->type, &param->bitsz);
+	if (!t) {
+		fprintf(stderr, "Invalid type %s\n", param_data->type);
+		return -1;
+	}
+	param->type = t->containid;
+	strcpy(param->name, param_name);
+	param->id = param_data->id;
+	if (strcmp(param_data->attr, "tc_key") == 0)
+		param->flags |= P4TC_EXT_PARAMS_FLAG_ISKEY;
+	else if (strcmp(param_data->attr, "tc_data_scalar") == 0)
+		param->flags |= P4TC_EXT_PARAMS_FLAG_IS_DATASCALAR;
+
+	return 0;
+}
+
 static struct p4tc_act_param *
 parse_prefixed_act_param_exp(struct p4tc_filter_ctx *ctx,
 			     struct typedexpr *t,
@@ -261,7 +304,42 @@ free_param:
 	return NULL;
 }
 
+static struct p4tc_ext_param *
+parse_prefixed_ext_param_exp(struct p4tc_filter_ctx *ctx, struct typedexpr *t,
+			     union p4tc_filter_name_expr *filter_name_expr,
+			     struct parsedexpr *e,
+			     char **p4tcpath, int num_components)
+{
+	struct p4tc_ext_param *param;
+	char *paramname;
+	int ret;
+
+	filter_name_expr->type = P4TC_NAME_EXPR_EXT_PARAM;
+
+	param = calloc(1, sizeof(*param));
+	if (!param) {
+		err_type("Out of memory");
+		return NULL;
+	}
+	paramname = p4tcpath[PARAM_EXT_PARAM_NAME_IDX];
+
+	ret = get_prefixed_ext_param_type(ctx, param, paramname);
+	if (ret < 0) {
+		free(param);
+		return NULL;
+	}
+
+	filter_name_expr->ext_param.data = param;
+
+	t->name.name = e->name.name;
+	t->name.data = filter_name_expr;
+	t->name.typ = get_p4type_byid(param->type);
+
+	return param;
+}
+
 /* Options:
+ * - param.ext.paramname
  * - param.act.cbname.actname.paramname
  * - key.keyfield
  */
@@ -313,6 +391,23 @@ static int parse_prefixed_exp(struct p4tc_filter_ctx *ctx, struct typedexpr *t,
 
 			filter_name_expr->act_param.data = param;
 			t->name.typ = param->type;
+		} else if (strcmp(p4tcpath[PARAM_OBJ_IDX], "ext") == 0) {
+			struct p4tc_ext_param *param;
+
+			if (ctx->obj_id != P4TC_OBJ_RUNTIME_EXTERN) {
+				err_type("Context isn't of extern type");
+				return -EINVAL;
+			}
+
+			param = parse_prefixed_ext_param_exp(ctx, t,
+							     filter_name_expr,
+							     e, p4tcpath,
+							     num_components);
+			if (!param)
+				return -EINVAL;
+
+			filter_name_expr->ext_param.data = param;
+			t->name.typ = get_p4type_byid(param->type);
 		}
 
 		if (ret < 0) {
@@ -374,6 +469,9 @@ static void free_typedexpr_name_prefix(struct typedexpr *t)
 			break;
 		case P4TC_NAME_EXPR_ACT_PARAM:
 			free(filter_name_expr->act_param.data);
+			break;
+		case P4TC_NAME_EXPR_EXT_PARAM:
+			free(filter_name_expr->ext_param.data);
 			break;
 		default:
 			/* Will never happen */
@@ -443,6 +541,12 @@ get_filter_name_expr_type(union p4tc_filter_name_expr *filter_name_expr)
 
 		act_param = filter_name_expr->act_param.data;
 		return act_param->type;
+	}
+	case P4TC_NAME_EXPR_EXT_PARAM: {
+		struct p4tc_ext_param *ext_param;
+
+		ext_param = filter_name_expr->ext_param.data;
+		return get_p4type_byid(ext_param->type);
 	}
 	case P4TC_NAME_EXPR_DEV:
 		return get_p4type_byid(P4TC_T_DEV);
@@ -1318,6 +1422,24 @@ static void add_binary_relation(struct nlmsghdr *n, struct typedexpr *name,
 		addattr_nest_end(n, entry_nest);
 		break;
 	}
+	case P4TC_NAME_EXPR_EXT_PARAM: {
+		struct p4tc_ext_param *ext_param;
+		__u8 value[P4TC_MAX_KEYSZ] = {0};
+		__u8 mask[P4TC_MAX_KEYSZ] = {0};
+		struct rtattr *ext_param_nest;
+		struct rtattr *ext_nest;
+
+		ext_nest = addattr_nest(n, MAX_MSG,
+					  P4TC_FILTER_OPND_EXT | NLA_F_NESTED);
+		ext_param_nest = addattr_nest(n, MAX_MSG,
+					      P4TC_FILTER_OPND_EXT_PARAMS | NLA_F_NESTED);
+		ext_param = filter_name_expr->ext_param.data;
+		extract_relational_val(value, mask, val, &extracted_mask);
+		p4tc_extern_inst_add_param_filter(ext_param, value, n);
+		addattr_nest_end(n, ext_param_nest);
+		addattr_nest_end(n, ext_nest);
+		break;
+	}
 	case P4TC_NAME_EXPR_CUSTOM: {
 		struct known_unprefixed_name *known_unprefixed_name;
 
@@ -1509,6 +1631,16 @@ print_filter_name_expr_type(union p4tc_filter_name_expr *filter_name_expr)
 		act_param = filter_name_expr->act_param.data;
 		printf("ACT PARAM: { NAME: %s TYPE: %s }\n",
 		       act_param->name, act_param->type->name);
+		break;
+	}
+	case P4TC_NAME_EXPR_EXT_PARAM: {
+		struct p4tc_ext_param *ext_param;
+		struct p4_type_s *t;
+
+		ext_param = filter_name_expr->ext_param.data;
+		t = get_p4type_byid(ext_param->type);
+		printf("EXT PARAM: { NAME: %s TYPE: %s }\n", ext_param->name,
+		       t->name);
 		break;
 	}
 	case P4TC_NAME_EXPR_DEV: {

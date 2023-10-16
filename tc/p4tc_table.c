@@ -217,6 +217,23 @@ int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		print_string(PRINT_ANY, "tmpl_created", "    tmpl created %s\n",
 			   "false");
 
+	if (tb[P4TC_ENTRY_EXTERNS]) {
+		struct rtattr *tb_exts[P4TC_ENTRY_EXTERN_MAX + 1];
+
+		parse_rtattr_nested(tb_exts, P4TC_ENTRY_EXTERN_MAX,
+				    tb[P4TC_ENTRY_EXTERNS]);
+
+		if (tb_exts[P4TC_ENTRY_EXTERN_COUNTER])
+			p4tc_print_one_extern(f, pipe,
+					      tb_exts[P4TC_ENTRY_EXTERN_COUNTER],
+					      false);
+
+		if (tb_exts[P4TC_ENTRY_EXTERN_METER])
+			p4tc_print_one_extern(f, pipe,
+					      tb_exts[P4TC_ENTRY_EXTERN_METER],
+					      false);
+	}
+
 	print_nl();
 
 	return 0;
@@ -957,6 +974,33 @@ static int parse_table_attrs(int *argc_p, char ***argv_p, struct nlmsghdr *n)
 	return 0;
 }
 
+static int parse_new_table_entry_meter(int *argc_p, char ***argv_p,
+				       const char *pname, struct nlmsghdr *n)
+{
+	struct rtattr *tail, *tail2;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	char *instname;
+	int ret;
+
+	instname = *argv;
+
+	tail = addattr_nest(n, MAX_MSG, P4TC_ENTRY_EXTERNS | NLA_F_NESTED);
+	tail2 = addattr_nest(n, MAX_MSG,
+			     P4TC_ENTRY_EXTERN_METER | NLA_F_NESTED);
+	NEXT_ARG();
+
+	ret = parse_p4tc_extern_common(&argc, &argv, n, pname, instname,
+				       "DirectMeter", false);
+	addattr_nest_end(n, tail2);
+	addattr_nest_end(n, tail);
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return ret;
+}
+
 int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			  struct parse_state *state, char *p4tcpath[],
 			  const char *pname, __u32 *ids, __u32 *offset)
@@ -1032,6 +1076,14 @@ int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
 			arch_info = p4tc_json_import_arch(*argv);
 			if (!arch_info)
 				return -1;
+		} else if (strcmp(*argv, "meter") == 0 ) {
+			NEXT_ARG();
+			ret = parse_new_table_entry_meter(&argc, &argv, pname,
+							  n);
+			if (ret < 0)
+				return -1;
+			if (argc)
+				continue;
 		} else if (strcmp(*argv, "entry") == 0) {
 			goto out;
 		} else {

@@ -33,17 +33,13 @@
 #define PATH_RUNTIME_EXTINSTNAME_IDX 3
 #define PATH_TABLE_OBJ_IDX 1
 #define PATH_TABLE_PNAME_IDX 0
+#define PATH_RUNTIME_OBJ_IDX 1
+#define PATH_RUNTIME_PNAME_IDX 0
 #define PATH_RUNTIME_EXT_PNAME_IDX PATH_TABLE_PNAME_IDX
 
-#define PATH_RUNTIME_PNAME_IDX 0
-
-#define MAX_PATH_COMPONENTS 6
+#define MAX_PATH_COMPONENTS 7
 
 #define STR_IS_EMPTY(str) ((str)[0] == '\0')
-
-#define __KERNEL_DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
-
-#define BITS_TO_BYTES(n) __KERNEL_DIV_ROUND_UP(n, sizeof(char) * 8)
 
 /* PATH SYNTAX: tc p4template objtype/pname/...  */
 static inline int parse_path(char *path, char **p4tcpath, const char *separator)
@@ -167,6 +163,14 @@ struct p4tc_act_param {
 	__u8 flags;
 };
 
+struct p4tc_ext_param {
+	char name[EXTPARAMNAMSIZ];
+	__u32 id;
+	__u32 type;
+	__u32 bitsz;
+	__u8 flags;
+};
+
 int dyna_add_param(struct p4tc_act_param *param, void *value, bool in_act,
 		   struct nlmsghdr *n, bool convert_value);
 
@@ -211,18 +215,27 @@ introspect_key_field_byname(struct p4tc_json_pipeline **p,
 int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
 		       int *argc_p, char ***argv_p, const char **p4tcpath);
 int parse_extern_help(int cmd, char **p4tcpath);
+int parse_p4tc_extern_common(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			     const char *pname, const char *inst, const char *k,
+			     bool add_prio_nest);
 int p4tc_extern_parse_inst_param(int *argc_p, char ***argv_p, bool in_act,
 				 int *parms_count,
 				 struct p4tc_json_extern_insts_list *inst,
 				 struct nlmsghdr *n);
+int
+p4tc_extern_inst_add_param_filter(struct p4tc_ext_param *param,
+				  const void *value, struct nlmsghdr *n);
 
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 			   const char *suffix, FILE *f);
 int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		      const char *prefix, struct p4tc_json_pipeline *pipe,
 		      struct p4tc_json_table *table, __u32 tbl_id);
-int p4tc_extern_inst_print_params(struct rtattr *arg, FILE *f);
+int p4tc_extern_inst_print_params(struct rtattr *arg,
+				  struct p4tc_json_extern_insts_list *insts_list,
+				  FILE *f);
 int print_extern(struct nlmsghdr *n, void *arg);
-int p4tc_print_one_extern(FILE *f, struct rtattr *arg, bool bind);
+int p4tc_print_one_extern(FILE *f, struct p4tc_json_pipeline *pipe,
+			  struct rtattr *arg, bool bind);
 
 #endif
