@@ -377,6 +377,58 @@ static int p4tc_print_table_flush(struct nlmsghdr *n, struct rtattr *cnt_attr,
 	return 0;
 }
 
+static int print_action_template(struct nlmsghdr *n, struct rtattr *arg,
+				 __u32 a_id, FILE *f)
+{
+	struct action_util au = {0};
+	struct rtattr *tb[P4TC_ACT_MAX + 1];
+
+	parse_rtattr_nested(tb, P4TC_ACT_MAX, arg);
+
+	if (tb[P4TC_ACT_NAME]) {
+		const char *name = RTA_DATA(tb[P4TC_ACT_NAME]);
+
+		print_string(PRINT_ANY, "aname", "    template action name %s\n", name);
+		strlcpy(au.id, RTA_DATA(tb[P4TC_ACT_NAME]),
+			RTA_PAYLOAD(tb[P4TC_ACT_NAME]));
+	} else {
+		fprintf(stderr, "Must specify action name\n");
+		return -1;
+	}
+
+	if (a_id)
+		print_uint(PRINT_ANY, "actid", "    action id %u\n", a_id);
+
+	if (tb[P4TC_ACT_PARMS]) {
+		print_string(PRINT_FP, NULL, "\n\t params:\n", "");
+		open_json_array(PRINT_JSON, "params");
+		print_dyna_parms(&au, tb[P4TC_ACT_PARMS], f);
+		close_json_array(PRINT_JSON, NULL);
+	}
+
+	if (tb[P4TC_ACT_NUM_PREALLOC]) {
+		const __u32 *num_prealloc = RTA_DATA(tb[P4TC_ACT_NUM_PREALLOC]);
+
+		print_uint(PRINT_ANY, "prealloc", "prealloc %u\n",
+			   *num_prealloc);
+	}
+
+	return 0;
+}
+
+static int print_action_template_flush(struct nlmsghdr *n,
+				       struct rtattr *cnt_attr,
+				       FILE *f)
+{
+	const __u32 *cnt = RTA_DATA(cnt_attr);
+
+	print_uint(PRINT_ANY, "count", "    action template flush count %u",
+		   *cnt);
+	print_nl();
+
+	return 0;
+}
+
 static int print_pipeline(struct nlmsghdr *n, FILE *f, struct rtattr *arg)
 {
 	struct rtattr *tb[P4TC_PIPELINE_MAX + 1];
@@ -450,6 +502,18 @@ static int print_p4tmpl_1(struct nlmsghdr *n, struct p4tc_json_pipeline *pipe,
 			}
 		}
 		break;
+	case P4TC_OBJ_ACT:
+		ids = RTA_DATA(tb[P4TC_PATH]);
+		if (cmd == RTM_DELP4TEMPLATE && (n->nlmsg_flags & NLM_F_ROOT))
+			print_action_template_flush(n, tb[P4TC_COUNT], f);
+		else {
+			if (tb[P4TC_PATH])
+				print_action_template(n, tb[P4TC_PARAMS],
+						      ids[0], f);
+			else
+				print_action_template(n, tb[P4TC_PARAMS], 0, f);
+		}
+		break;
 	default:
 		break;
 	}
@@ -521,6 +585,9 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 		print_string(PRINT_ANY, "obj", "templates obj type %s\n",
 			     "table");
 		break;
+	case P4TC_OBJ_ACT:
+		print_string(PRINT_ANY, "obj", "template obj type %s\n",
+			     "action template");
 	}
 
 	if (tb[P4TC_ROOT_PNAME]) {
@@ -556,6 +623,80 @@ int print_p4tmpl(struct nlmsghdr *n, void *arg)
 		p4tc_json_free_pipeline(pipe);
 
 	return 0;
+}
+
+static int parse_action_data(int *argc_p, char ***argv_p, struct nlmsghdr *n,
+			     char *p4tcpath[], int cmd, unsigned int *flags)
+{
+	char *actname = NULL, *tblactname = NULL, *tblname = NULL;
+	char full_actname[ACTNAMSIZ] = {0};
+	__u32 pipeid = 0, actid = 0;
+	struct action_util a = {0};
+	__u32 prealloc_acts = 0;
+	char **argv = *argv_p;
+	struct rtattr *tail;
+	int argc = *argc_p;
+	int ret = 0;
+	char *cbname;
+
+	cbname = p4tcpath[PATH_CBNAME_IDX];
+	if (p4tcpath[PATH_TBLANAME_IDX]) {
+		tblname = p4tcpath[PATH_TBLNAME_IDX];
+		tblactname = p4tcpath[PATH_TBLANAME_IDX];
+	} else {
+		actname = p4tcpath[PATH_PIPEANAME_IDX];
+	}
+
+	if (cbname && actname)
+		ret = concat_cb_name(full_actname, cbname, actname, ACTNAMSIZ);
+	else if (cbname && tblname && tblactname)
+		ret = snprintf(full_actname, ACTNAMSIZ, "%s/%s/%s", cbname,
+			       tblname, tblactname) >= ACTNAMSIZ ? -1 : 0;
+	else if (cbname)
+		ret = try_strncpy(full_actname, cbname, ACTNAMSIZ);
+
+	if (ret < 0) {
+		fprintf(stderr, "Action name too long\n");
+		return -1;
+	}
+
+	tail = addattr_nest(n, MAX_MSG, P4TC_PARAMS | NLA_F_NESTED);
+
+	while (argc > 0) {
+		if (strcmp(*argv, "pipeid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&pipeid, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "actid") == 0) {
+			NEXT_ARG();
+			if (get_u32(&actid, *argv, 10) < 0)
+				return -1;
+		} else if (strcmp(*argv, "num_prealloc_acts") == 0) {
+			NEXT_ARG();
+			if (get_u32(&prealloc_acts, *argv, 0) < 0)
+				return -1;
+		} else {
+			if (parse_dyna(&argc, &argv, false, a.id, n) < 0)
+				return -1;
+		}
+		argv++;
+		argc--;
+	}
+	if (!STR_IS_EMPTY(full_actname))
+		addattrstrz(n, MAX_MSG, P4TC_ACT_NAME, full_actname);
+	if (prealloc_acts)
+		addattr32(n, MAX_MSG, P4TC_ACT_NUM_PREALLOC, prealloc_acts);
+
+	addattr_nest_end(n, tail);
+	if (actid)
+		addattr32(n, MAX_MSG, P4TC_PATH, actid);
+	if (!actid && !cbname && !actname)
+		*flags |= NLM_F_ROOT;
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return pipeid;
 }
 
 static int parse_tmpl_table_action(int *argc_p, char ***argv_p,
@@ -1033,6 +1174,14 @@ static int p4tmpl_cmd(int cmd, unsigned int flags, int *argc_p,
 	case P4TC_OBJ_TABLE:
 		pipeid = parse_table_data(&argc, &argv, &req.n, p4tcpath, cmd,
 					  &flags);
+		if (pipeid < 0)
+			return -1;
+		req.t.pipeid = pipeid;
+
+		break;
+	case P4TC_OBJ_ACT:
+		pipeid = parse_action_data(&argc, &argv, &req.n, p4tcpath, cmd,
+					&flags);
 		if (pipeid < 0)
 			return -1;
 		req.t.pipeid = pipeid;
