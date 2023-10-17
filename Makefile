@@ -27,6 +27,7 @@ MANDIR?=$(DATADIR)/man
 ARPDDIR?=/var/lib/arpd
 KERNEL_INCLUDE?=/usr/include
 BASH_COMPDIR?=$(DATADIR)/bash-completion/completions
+INTROSPECTION_PATH?=$(CONFDIR)/introspection
 
 # Path to db_185.h include
 DBM_INCLUDE:=$(DESTDIR)/usr/include
@@ -43,7 +44,8 @@ DEFINES+=-DCONF_USR_DIR=\"$(CONF_USR_DIR)\" \
          -DNETNS_RUN_DIR=\"$(NETNS_RUN_DIR)\" \
          -DNETNS_ETC_DIR=\"$(NETNS_ETC_DIR)\" \
          -DARPDDIR=\"$(ARPDDIR)\" \
-         -DCONF_COLOR=$(CONF_COLOR)
+         -DCONF_COLOR=$(CONF_COLOR) \
+         -DINTROSPECTION_PATH=\"$(INTROSPECTION_PATH)\"
 
 #options for AX.25
 ADDLIB+=ax25_ntop.o
@@ -108,6 +110,9 @@ install: all
 	install -m 0755 -d $(DESTDIR)$(HDRDIR)
 	@for i in $(SUBDIRS);  do $(MAKE) -C $$i install; done
 	install -m 0644 $(shell find etc/iproute2 -maxdepth 1 -type f) $(DESTDIR)$(CONF_USR_DIR)
+	install -m 0755 -d $(DESTDIR)$(INTROSPECTION_PATH)
+	install -m 0644 $(shell find etc/iproute2/introspection -maxdepth 1 -type f) \
+		$(DESTDIR)$(INTROSPECTION_PATH)
 	install -m 0755 -d $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 bash-completion/tc $(DESTDIR)$(BASH_COMPDIR)
 	install -m 0644 bash-completion/devlink $(DESTDIR)$(BASH_COMPDIR)
