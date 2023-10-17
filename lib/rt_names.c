@@ -28,9 +28,9 @@
 int numeric;
 
 struct rtnl_hash_entry {
-	struct rtnl_hash_entry	*next;
-	const char		*name;
-	unsigned int		id;
+	struct rtnl_hash_entry  *next;
+	const char              *name;
+	unsigned int            id;
 };
 
 static int fread_id_name(FILE *fp, int *id, char *namebuf)
@@ -889,4 +889,69 @@ int protodown_reason_a2n(__u32 *id, const char *arg)
 		return -1;
 	*id = res;
 	return 0;
+}
+
+static char *p4tc_ctrlent_tab[256];
+
+static int p4tc_ctrlent_init;
+
+/* Not able to detect duplicate names, only ID */
+static void p4tc_ctrlent_initialise(void)
+{
+	struct dirent *de;
+	DIR *d;
+
+	p4tc_ctrlent_init = 1;
+
+	rtnl_tab_initialize(CONF_ETC_DIR "/p4tc_entities", p4tc_ctrlent_tab,
+			    256);
+
+	rtnl_tab_initialize_dir("p4tc_entities.d", p4tc_ctrlent_tab, 256);
+
+	d = opendir(CONF_ETC_DIR "/p4tc_entities.d");
+	if (!d) {
+		fprintf(stderr, "Unable to open p4tc_entities dir\n");
+		return;
+	}
+
+	while ((de = readdir(d)) != NULL) {
+		char path[PATH_MAX];
+		size_t len;
+
+		if (*de->d_name == '.')
+			continue;
+
+		len = strlen(de->d_name);
+		if (len <= 5)
+			continue;
+		/* Must only consider files ending with ".conf" */
+		if (strcmp(de->d_name + len - 5, ".conf"))
+			continue;
+
+		snprintf(path, sizeof(path), CONF_ETC_DIR "/p4tc_entities.d/%s",
+			 de->d_name);
+		rtnl_tab_initialize(path, p4tc_ctrlent_tab, 256);
+	}
+	closedir(d);
+}
+
+/* Jamal: Should we return char *, or create some structure to put in the table?
+ */
+int p4tc_ctrltable_getbyid(__u16 id, char *str)
+{
+	if (!p4tc_ctrlent_init)
+		p4tc_ctrlent_initialise();
+
+	if (id > 255) {
+		fprintf(stderr, "id must be smaller than 256");
+		return -1;
+	}
+
+	if (p4tc_ctrlent_tab[id]) {
+		strncpy(str, p4tc_ctrlent_tab[id], NAME_MAX_LEN);
+		return 0;
+	}
+
+	fprintf(stderr, "Control entity id not found\n");
+	return -1;
 }
