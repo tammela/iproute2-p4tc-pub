@@ -19,6 +19,7 @@
 
 #include <asm/types.h>
 #include <linux/rtnetlink.h>
+#include <linux/p4tc.h>
 
 #include "rt_names.h"
 #include "utils.h"
@@ -28,9 +29,9 @@
 int numeric;
 
 struct rtnl_hash_entry {
-	struct rtnl_hash_entry	*next;
-	const char		*name;
-	unsigned int		id;
+	struct rtnl_hash_entry  *next;
+	const char              *name;
+	unsigned int            id;
 };
 
 static int fread_id_name(FILE *fp, int *id, char *namebuf)
@@ -890,4 +891,45 @@ int protodown_reason_a2n(__u32 *id, const char *arg)
 		return -1;
 	*id = res;
 	return 0;
+}
+
+static char *p4tc_ctrlent_tab[256] = {
+	[P4TC_ENTITY_UNSPEC] = "unspec",
+	[P4TC_ENTITY_KERNEL] = "kernel",
+	[P4TC_ENTITY_TC] = "tc",
+	[P4TC_ENTITY_TIMER] = "timer",
+};
+
+static int p4tc_ctrlent_init;
+
+/* Not able to detect duplicate names, only ID */
+static void p4tc_ctrlent_initialise(void)
+{
+	p4tc_ctrlent_init = 1;
+
+	rtnl_tab_initialize(CONF_ETC_DIR "/p4tc_entities", p4tc_ctrlent_tab,
+			    256);
+
+	rtnl_tab_initialize_dir("p4tc_entities.d", p4tc_ctrlent_tab, 256);
+}
+
+/* Jamal: Should we return char *, or create some structure to put in the table?
+ */
+int p4tc_ctrltable_getbyid(__u16 id, char *str)
+{
+	if (id > 255) {
+		fprintf(stderr, "id must be smaller than 256");
+		return -1;
+	}
+
+	if (!p4tc_ctrlent_tab[id] && !p4tc_ctrlent_init)
+		p4tc_ctrlent_initialise();
+
+	if (p4tc_ctrlent_tab[id]) {
+		strncpy(str, p4tc_ctrlent_tab[id], NAME_MAX_LEN);
+		return 0;
+	}
+
+	fprintf(stderr, "Control entity id not found\n");
+	return -1;
 }
