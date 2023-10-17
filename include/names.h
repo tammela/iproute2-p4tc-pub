@@ -2,6 +2,8 @@
 #ifndef DB_NAMES_H_
 #define DB_NAMES_H_ 1
 
+#include "utils.h"
+
 #define IDNAME_MAX 256
 
 struct db_entry {

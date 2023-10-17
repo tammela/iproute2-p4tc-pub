@@ -42,6 +42,10 @@ int nl_proto_a2n(__u32 *id, const char *arg);
 int protodown_reason_a2n(__u32 *id, const char *arg);
 int protodown_reason_n2a(int id, char *buf, int len);
 
+#define NAME_MAX_LEN 512
+
+int p4tc_ctrltable_getbyid(__u16 id, char *str);
+
 extern int numeric;
 
 #endif
