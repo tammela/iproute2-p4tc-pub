@@ -200,7 +200,10 @@ int parse_table_entry(int cmd, int *argc_p, char ***argv_p,
 int parse_table_entry_help(int cmd, char **p4tcpath);
 int parse_table_default_action(int *argc_p, char ***argv_p,
 			       struct nlmsghdr *n, __u32 attr_id);
-
+struct p4tc_json_key_fields_list *
+introspect_key_field_byname(struct p4tc_json_pipeline **p,
+			    struct p4tc_json_table **t, const char *pname,
+			    const char **p4tcpath, const char *keyname);
 int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
 		       int *argc_p, char ***argv_p, const char **p4tcpath);
 int parse_extern_help(int cmd, char **p4tcpath);

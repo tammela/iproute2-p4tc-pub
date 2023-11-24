@@ -220,6 +220,8 @@ static int do_cmd(int argc, char **argv)
 		return do_tcmonitor(argc-1, argv+1);
 	if (matches(*argv, "exec") == 0)
 		return do_exec(argc-1, argv+1);
+	if (matches(*argv, "p4ctrl") == 0)
+		return do_p4_runtime(argc-1, argv+1);
 	if (matches(*argv, "p4template") == 0)
 		return do_p4tmpl(argc-1, argv+1);
 	if (matches(*argv, "help") == 0) {
