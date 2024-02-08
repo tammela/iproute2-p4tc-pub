@@ -270,7 +270,8 @@ static bool find_prog_to_attach(struct bpf_program *prog,
 		return !strcmp(get_bpf_program__section_name(prog), section);
 }
 
-static int load_bpf_object(struct bpf_cfg_in *cfg)
+static int __load_bpf_object(struct bpf_object **obj_ptr,
+			     struct bpf_cfg_in *cfg)
 {
 	struct bpf_program *p, *prog = NULL;
 	struct bpf_object *obj;
@@ -353,14 +354,36 @@ static int load_bpf_object(struct bpf_cfg_in *cfg)
 	else
 		cfg->prog_fd = prog_fd;
 
+	*obj_ptr = obj;
+	return 0;
+
 unload_obj:
 	/* Close obj as we don't need it */
 	bpf_object__close(obj);
 	return ret;
 }
 
-/* Load ebpf and return prog fd */
-int iproute2_load_libbpf(struct bpf_cfg_in *cfg)
+static int load_bpf_object(struct bpf_cfg_in *cfg)
+{
+	struct bpf_object *obj;
+	int ret;
+
+	ret = __load_bpf_object(&obj, cfg);
+	if (ret < 0)
+		return ret;
+
+	/* Close obj as we don't need it */
+	bpf_object__close(obj);
+	return ret;
+}
+
+static int load_and_return_bpf_object(struct bpf_cfg_in *cfg,
+				      struct bpf_object **obj)
+{
+	return __load_bpf_object(obj, cfg);
+}
+
+static int __iproute2_load_libbpf(struct bpf_cfg_in *cfg)
 {
 	int ret = 0;
 
@@ -381,7 +404,35 @@ int iproute2_load_libbpf(struct bpf_cfg_in *cfg)
 		return ret;
 	}
 
+	return 0;
+}
+
+/* Load ebpf and return prog fd */
+int iproute2_load_libbpf(struct bpf_cfg_in *cfg)
+{
+	int ret = 0;
+
+	ret = __iproute2_load_libbpf(cfg);
+	if (ret < 0)
+		return ret;
+
 	ret = load_bpf_object(cfg);
+	if (ret)
+		return ret;
+
+	return cfg->prog_fd;
+}
+
+/* Load ebpf and return prog fd */
+int iproute2_load_libbpf_obj(struct bpf_cfg_in *cfg, struct bpf_object **obj)
+{
+	int ret = 0;
+
+	ret = __iproute2_load_libbpf(cfg);
+	if (ret < 0)
+		return ret;
+
+	ret = load_and_return_bpf_object(cfg, obj);
 	if (ret)
 		return ret;
 
