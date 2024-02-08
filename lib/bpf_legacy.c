@@ -958,15 +958,20 @@ static int bpf_do_load(struct bpf_cfg_in *cfg)
 	return 0;
 }
 
-int bpf_load_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
-		    void *nl)
+#ifdef HAVE_LIBBPF
+static int bpf_do_load_obj(struct bpf_cfg_in *cfg, struct bpf_object **obj)
+{
+	if (cfg->mode == EBPF_OBJECT)
+		return iproute2_load_libbpf_obj(cfg, obj);
+	else
+		return -1;
+}
+#endif
+
+static int __bpf_load_common(struct bpf_cfg_in *cfg,
+			     const struct bpf_cfg_ops *ops, void *nl)
 {
 	char annotation[256];
-	int ret;
-
-	ret = bpf_do_load(cfg);
-	if (ret < 0)
-		return ret;
 
 	if (cfg->mode == CBPF_BYTECODE || cfg->mode == CBPF_FILE)
 		ops->cbpf_cb(nl, cfg->opcodes, cfg->n_opcodes);
@@ -975,6 +980,36 @@ int bpf_load_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
 			 basename(strdupa(cfg->object)),
 			 cfg->mode == EBPF_PINNED ? "*fsobj" : cfg->section);
 		ops->ebpf_cb(nl, cfg->prog_fd, annotation);
+	}
+
+	return 0;
+}
+
+int bpf_load_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
+		    void *nl)
+{
+	int ret;
+
+	ret = bpf_do_load(cfg);
+	if (ret < 0)
+		return ret;
+
+	return __bpf_load_common(cfg, ops, nl);
+}
+
+int bpf_load_common_obj(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
+			struct bpf_object **obj, void *nl)
+{
+	int ret;
+
+	ret = bpf_do_load_obj(cfg, obj);
+	if (ret < 0)
+		return ret;
+
+	ret = __bpf_load_common(cfg, ops, nl);
+	if (ret < 0) {
+		bpf_object__close(*obj);
+		return ret;
 	}
 
 	return 0;
