@@ -1634,9 +1634,11 @@ static int flower_parse_cfm(int *argc_p, char ***argv_p, __be16 eth_type,
 	return 0;
 }
 
-static int flower_parse_opt(const struct filter_util *qu, char *handle,
+static int flower_parse_opt(const struct filter_util *qu,
+			    struct tc_filter_fields *filter_fields,
 			    int argc, char **argv, struct nlmsghdr *n)
 {
+	char *handle = filter_fields->handle;
 	int ret;
 	struct tcmsg *t = NLMSG_DATA(n);
 	bool mpls_format_old = false;

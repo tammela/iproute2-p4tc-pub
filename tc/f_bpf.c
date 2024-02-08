@@ -71,10 +71,12 @@ static const struct bpf_cfg_ops bpf_cb_ops = {
 	.ebpf_cb = bpf_ebpf_cb,
 };
 
-static int bpf_parse_opt(const struct filter_util *qu, char *handle,
+static int bpf_parse_opt(const struct filter_util *qu,
+			 struct tc_filter_fields *filter_fields,
 			 int argc, char **argv, struct nlmsghdr *n)
 {
 	const char *bpf_obj = NULL, *bpf_uds_name = NULL;
+	char *handle = filter_fields->handle;
 	struct tcmsg *t = NLMSG_DATA(n);
 	unsigned int bpf_gen_flags = 0;
 	unsigned int bpf_flags = 0;

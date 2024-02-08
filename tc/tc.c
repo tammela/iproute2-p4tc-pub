@@ -78,9 +78,11 @@ static int print_nofopt(const struct filter_util *qu, FILE *f, struct rtattr *op
 	return 0;
 }
 
-static int parse_nofopt(const struct filter_util *qu, char *fhandle,
+static int parse_nofopt(const struct filter_util *qu,
+			struct tc_filter_fields *filter_fields,
 			int argc, char **argv, struct nlmsghdr *n)
 {
+	char *fhandle = filter_fields->handle;
 	__u32 handle;
 
 	if (argc) {

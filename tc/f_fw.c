@@ -29,8 +29,11 @@ static void explain(void)
 		"		FWMASK is 0xffffffff by default.\n");
 }
 
-static int fw_parse_opt(const struct filter_util *qu, char *handle, int argc, char **argv, struct nlmsghdr *n)
+static int fw_parse_opt(const struct filter_util *qu,
+			struct tc_filter_fields *filter_fields,
+			int argc, char **argv, struct nlmsghdr *n)
 {
+	char *handle = filter_fields->handle;
 	struct tcmsg *t = NLMSG_DATA(n);
 	struct rtattr *tail;
 	__u32 mask = 0;

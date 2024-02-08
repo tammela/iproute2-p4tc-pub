@@ -126,9 +126,11 @@ out:
 	return 0;
 }
 
-static int flow_parse_opt(const struct filter_util *fu, char *handle,
+static int flow_parse_opt(const struct filter_util *fu,
+			  struct tc_filter_fields *filter_fields,
 			  int argc, char **argv, struct nlmsghdr *n)
 {
+	char *handle = filter_fields->handle;
 	struct tcmsg *t = NLMSG_DATA(n);
 	struct rtattr *tail;
 	__u32 mask = ~0U, xor = 0;
