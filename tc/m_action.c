@@ -316,7 +316,7 @@ static void print_hw_stats(const struct rtattr *arg, bool print_used)
 	print_nl();
 }
 
-static int parse_hw_stats(const char *str, struct nlmsghdr *n)
+int parse_hw_stats(const char *str, struct nlmsghdr *n)
 {
 	int i;
 

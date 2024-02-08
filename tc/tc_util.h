@@ -127,6 +127,7 @@ void print_action_control(FILE *f, const char *prefix,
 int police_print_xstats(struct action_util *a, FILE *f, struct rtattr *tb);
 int tc_print_action(FILE *f, const struct rtattr *tb, unsigned short tot_acts);
 int parse_action(int *argc_p, char ***argv_p, int tca_id, struct nlmsghdr *n);
+int parse_hw_stats(const char *str, struct nlmsghdr *n);
 void print_tm(FILE *f, const struct tcf_t *tm);
 int prio_print_opt(struct qdisc_util *qu, FILE *f, struct rtattr *opt);
 
