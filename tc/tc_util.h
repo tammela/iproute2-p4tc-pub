@@ -44,11 +44,20 @@ struct qdisc_util {
 	int (*has_block)(struct qdisc_util *qu, struct rtattr *opt, __u32 block_idx, bool *p_has);
 };
 
+struct tc_filter_fields {
+	char *handle;
+	__u32 chain;
+	__u32 classid;
+	__be16 proto;
+	__u16 prio;
+};
+
 extern __u16 f_proto;
 struct filter_util {
 	struct filter_util *next;
 	char id[FILTER_NAMESZ];
-	int (*parse_fopt)(struct filter_util *qu, char *fhandle,
+	int (*parse_fopt)(struct filter_util *qu,
+			  struct tc_filter_fields *filter_fields,
 			  int argc, char **argv, struct nlmsghdr *n);
 	int (*print_fopt)(struct filter_util *qu,
 			  FILE *f, struct rtattr *opt, __u32 fhandle);

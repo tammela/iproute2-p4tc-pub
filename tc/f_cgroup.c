@@ -17,9 +17,11 @@ static void explain(void)
 	fprintf(stderr, "                  [ action ACTION_SPEC ]\n");
 }
 
-static int cgroup_parse_opt(struct filter_util *qu, char *handle,
+static int cgroup_parse_opt(struct filter_util *qu,
+			    struct tc_filter_fields *filter_fields,
 			   int argc, char **argv, struct nlmsghdr *n)
 {
+	char *handle = filter_fields->handle;
 	struct tcmsg *t = NLMSG_DATA(n);
 	struct rtattr *tail;
 	long h = 0;

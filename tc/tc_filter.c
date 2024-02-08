@@ -65,6 +65,7 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 		.n.nlmsg_type = cmd,
 		.t.tcm_family = AF_UNSPEC,
 	};
+	struct tc_filter_fields filter_fields = {};
 	struct filter_util *q = NULL;
 	__u32 prio = 0;
 	__u32 protocol = 0;
@@ -133,6 +134,7 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 			if (get_tc_classid(&handle, *argv))
 				invarg("Invalid parent ID", *argv);
 			req.t.tcm_parent = handle;
+			filter_fields.classid = req.t.tcm_parent;
 		} else if (strcmp(*argv, "handle") == 0) {
 			NEXT_ARG();
 			if (fhandle)
@@ -161,6 +163,7 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 				duparg("chain", *argv);
 			if (get_u32(&chain_index, *argv, 0))
 				invarg("invalid chain index value", *argv);
+			filter_fields.chain = chain_index;
 			chain_index_set = 1;
 		} else if (matches(*argv, "estimator") == 0) {
 			if (parse_estimator(&argc, &argv, &est) < 0)
@@ -179,10 +182,18 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 		argc--; argv++;
 	}
 
+	if (protocol_set)
+		filter_fields.proto = protocol;
+
+	filter_fields.prio = prio;
+	filter_fields.handle = fhandle;
+
 	req.t.tcm_info = TC_H_MAKE(prio<<16, protocol);
 
-	if (chain_index_set)
+	if (chain_index_set) {
 		addattr32(&req.n, sizeof(req), TCA_CHAIN, chain_index);
+		filter_fields.chain = chain_index;
+	}
 
 	if (k[0])
 		addattr_l(&req.n, sizeof(req), TCA_KIND, k, strlen(k)+1);
@@ -201,7 +212,7 @@ static int tc_filter_modify(int cmd, unsigned int flags, int argc, char **argv)
 	}
 
 	if (q) {
-		if (q->parse_fopt(q, fhandle, argc, argv, &req.n))
+		if (q->parse_fopt(q, &filter_fields, argc, argv, &req.n))
 			return 1;
 	} else {
 		if (fhandle) {
@@ -397,6 +408,7 @@ static int tc_filter_get(int cmd, unsigned int flags, int argc, char **argv)
 		.t.tcm_parent = TC_H_UNSPEC,
 		.t.tcm_family = AF_UNSPEC,
 	};
+	struct tc_filter_fields filter_fields = {};
 	struct nlmsghdr *answer;
 	struct filter_util *q = NULL;
 	__u32 prio = 0;
@@ -461,6 +473,7 @@ static int tc_filter_get(int cmd, unsigned int flags, int argc, char **argv)
 			if (get_tc_classid(&parent_handle, *argv))
 				invarg("Invalid parent ID", *argv);
 			req.t.tcm_parent = parent_handle;
+			filter_fields.classid = req.t.tcm_parent;
 		} else if (strcmp(*argv, "handle") == 0) {
 			NEXT_ARG();
 			if (fhandle)
@@ -521,8 +534,13 @@ static int tc_filter_get(int cmd, unsigned int flags, int argc, char **argv)
 		req.t.tcm_info = TC_H_MAKE(prio<<16, protocol);
 	}
 
-	if (chain_index_set)
+	filter_fields.proto = protocol;
+	filter_fields.prio = prio;
+	filter_fields.handle = fhandle;
+	if (chain_index_set) {
 		addattr32(&req.n, sizeof(req), TCA_CHAIN, chain_index);
+		filter_fields.chain = chain_index;
+	}
 
 	if (req.t.tcm_parent == TC_H_UNSPEC) {
 		fprintf(stderr, "Must specify filter parent\n");
@@ -555,7 +573,7 @@ static int tc_filter_get(int cmd, unsigned int flags, int argc, char **argv)
 	}
 
 	if (cmd == RTM_GETTFILTER &&
-	    q->parse_fopt(q, fhandle, argc, argv, &req.n))
+	    q->parse_fopt(q, &filter_fields, argc, argv, &req.n))
 		return 1;
 
 	if (!fhandle && cmd == RTM_GETTFILTER) {
