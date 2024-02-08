@@ -261,6 +261,11 @@ struct bpf_cfg_in {
 int bpf_parse_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops);
 int bpf_load_common(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
 		    void *nl);
+#ifdef HAVE_LIBBPF
+#include <bpf/libbpf.h>
+int bpf_load_common_obj(struct bpf_cfg_in *cfg, const struct bpf_cfg_ops *ops,
+			struct bpf_object **obj, void *nl);
+#endif
 int bpf_parse_and_load_common(struct bpf_cfg_in *cfg,
 			      const struct bpf_cfg_ops *ops, void *nl);
 
@@ -299,6 +304,7 @@ bool iproute2_is_map_in_map(const char *libbpf_map_name, struct bpf_elf_map *ima
 			    struct bpf_elf_map *omap, char *omap_name);
 int iproute2_find_map_name_by_id(unsigned int map_id, char *name);
 int iproute2_load_libbpf(struct bpf_cfg_in *cfg);
+int iproute2_load_libbpf_obj(struct bpf_cfg_in *cfg, struct bpf_object **obj);
 #endif /* HAVE_LIBBPF */
 #else
 static inline int bpf_send_map_fds(const char *path, const char *obj)
