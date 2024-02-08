@@ -1018,13 +1018,15 @@ static __u32 u32_hash_fold(struct tc_u32_key *key)
 	return ntohl(key->val & key->mask) >> fshift;
 }
 
-static int u32_parse_opt(struct filter_util *qu, char *handle,
+static int u32_parse_opt(struct filter_util *qu,
+			 struct tc_filter_fields *filter_fields,
 			 int argc, char **argv, struct nlmsghdr *n)
 {
 	struct {
 		struct tc_u32_sel sel;
 		struct tc_u32_key keys[128];
 	} sel = {};
+	char *handle = filter_fields->handle;
 	struct tcmsg *t = NLMSG_DATA(n);
 	struct rtattr *tail;
 	int sel_ok = 0, terminal_ok = 0;
