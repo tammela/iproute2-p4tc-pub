@@ -46,6 +46,61 @@ static void help_p4ctrl(void)
 		"\tOBJATTRS are the object specific attributes, example entry keys\n");
 }
 
+#define P4TC_CMD_NAME_IDX 1
+
+int tc_p4ctrl_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p)
+{
+	char *p4tcpath[MAX_PATH_COMPONENTS] = {NULL};
+	char *cmdpath[MAX_PATH_COMPONENTS] = { NULL };
+	int num_cmd_components;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	char *cmd_name;
+	__u32 cmd = 0;
+	int ret;
+
+	num_cmd_components = parse_path(*argv, cmdpath, "/");
+	if (num_cmd_components > 2) {
+		fprintf(stderr, "Invalid cmd path %s\n", *argv);
+		return -1;
+	}
+
+	cmd_name = cmdpath[P4TC_CMD_NAME_IDX];
+	if (cmd_name) {
+		if (strcmp("create", cmd_name) == 0) {
+			cmd = RTM_P4TC_CREATE;
+		} else if (strcmp("update", cmd_name) == 0) {
+			cmd = RTM_P4TC_UPDATE;
+		} else if (strcmp("del", cmd_name) == 0) {
+			cmd = RTM_P4TC_DEL;
+		} else if (strcmp("*", cmd_name) == 0) {
+			cmd = 0;
+		} else {
+			fprintf(stderr, "Invalid cmd %s\n", cmd_name);
+			return -1;
+		}
+	}
+
+	NEXT_ARG();
+	parse_path(*argv, p4tcpath, "/");
+	if (!p4tcpath[PATH_TABLE_OBJ_IDX]) {
+		fprintf(stderr, "Must specify obj type\n");
+		return -1;
+	}
+
+	if (strcmp(p4tcpath[PATH_TABLE_OBJ_IDX], "table") == 0) {
+		ret = tc_table_filter(rth, &argc, &argv, p4tcpath, cmd);
+	} else {
+		fprintf(stderr, "Unknown filter object %s\n", *argv);
+		return -1;
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return ret;
+}
+
 int print_p4ctrl(struct nlmsghdr *n, void *arg)
 {
 	struct p4tcmsg *t = NLMSG_DATA(n);

@@ -88,6 +88,9 @@ int do_tcmonitor(int argc, char **argv)
 	struct rtnl_handle rth;
 	char *file = NULL;
 	unsigned int groups = nl_mgrp(RTNLGRP_TC);
+#ifdef P4TC
+	bool has_filter = false;
+#endif
 
 	while (argc > 0) {
 		if (matches(*argv, "file") == 0) {
@@ -96,6 +99,11 @@ int do_tcmonitor(int argc, char **argv)
 		} else {
 			if (matches(*argv, "help") == 0) {
 				usage();
+#ifdef P4TC
+			} else if (strncmp(*argv, "command", 7) == 0) {
+				has_filter = true;
+				break;
+#endif
 			} else {
 				fprintf(stderr, "Argument \"%s\" is unknown, try \"tc monitor help\".\n", *argv);
 				exit(-1);
@@ -122,6 +130,16 @@ int do_tcmonitor(int argc, char **argv)
 		exit(1);
 
 	ll_init_map(&rth);
+
+#ifdef P4TC
+	if (has_filter) {
+		int ret;
+
+		ret = tc_filter(&rth, &argc, &argv);
+		if (ret < 0)
+			return ret;
+	}
+#endif
 
 	if (rtnl_listen(&rth, accept_tcmsg, (void *)stdout) < 0) {
 		rtnl_close(&rth);

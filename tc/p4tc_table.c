@@ -35,6 +35,130 @@
 #include "p4_types.h"
 #include "p4tc_filter.h"
 
+static int add_table_name(char **p4tcpath, struct nlmsghdr *n)
+{
+	char full_tblname[P4TC_TABLE_NAMSIZ] = {0};
+	char *cbname, *tblname;
+	int ret;
+
+	cbname = p4tcpath[PATH_CBNAME_IDX];
+	tblname = p4tcpath[PATH_TBLNAME_IDX];
+
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     P4TC_TABLE_NAMSIZ);
+		if (ret < 0) {
+			fprintf(stderr, "table name too long\n");
+			return -1;
+		}
+	}
+
+	if (!STR_IS_EMPTY(full_tblname))
+		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
+
+	return 0;
+}
+
+int tc_table_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p,
+		    char **p4tcpath, __u32 cmd)
+{
+	struct rtattr *tail, *tail2 = NULL, *tail3 = NULL, *tail4 = NULL;
+	struct parsedexpr *parsed_expr = NULL;
+	struct typedexpr *typed_expr = NULL;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct {
+		struct nlmsghdr n;
+		struct p4tcmsg t;
+		char buf[MAX_MSG];
+	} req = {
+		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct p4tcmsg)),
+		.n.nlmsg_flags = NLM_F_REQUEST,
+		.n.nlmsg_type = RTM_P4TC_CREATE,
+	};
+	bool has_extra_args;
+	int ret;
+
+	NEXT_ARG_FWD();
+
+	has_extra_args = !!argc;
+	if (has_extra_args && strcmp(*argv, "filter")) {
+		fprintf(stderr, "Invalid argument %s\n", *argv);
+		return -1;
+	}
+
+	req.t.obj = get_obj_runtime_type(p4tcpath[PATH_TABLE_OBJ_IDX]);
+	if (req.t.obj < 0) {
+		fprintf(stderr, "Unknown runtime object type %s\n",
+			p4tcpath[PATH_TABLE_OBJ_IDX]);
+		return -1;
+	}
+
+	if (has_extra_args) {
+		NEXT_ARG();
+
+		register_known_unprefixed_names();
+
+		parsed_expr = parse_expr_args(&argc,
+					      (const char * const **)&argv,
+					      NULL);
+		if (parsed_expr->t == ET_ERR) {
+			fprintf(stderr, "Failed to parse expr: %s\n",
+				parsed_expr->errmsg);
+			return -1;
+		}
+
+
+		typed_expr = type_expr(parsed_expr);
+		if (typed_expr->t == ET_ERR) {
+			fprintf(stderr, "Failed to type expr: %s\n",
+				typed_expr->errmsg_fmt);
+			return -1;
+		}
+		dump_typed_expr(typed_expr, 0);
+	}
+
+	if (p4tcpath[PATH_TABLE_PNAME_IDX])
+		addattrstrz(&req.n, MAX_MSG, P4TC_ROOT_PNAME,
+			    p4tcpath[PATH_TABLE_PNAME_IDX]);
+
+	tail = addattr_nest(&req.n, MAX_MSG,
+			    P4TC_ROOT_SUBSCRIBE | NLA_F_NESTED);
+
+	addattr32(&req.n, MAX_MSG, P4TC_CMD, cmd);
+	addattr32(&req.n, MAX_MSG, P4TC_PATH, 0);
+
+	tail2 = addattr_nest(&req.n, MAX_MSG,
+			     P4TC_PARAMS | NLA_F_NESTED);
+	if (p4tcpath[PATH_CBNAME_IDX] && p4tcpath[PATH_TBLNAME_IDX])
+		add_table_name(p4tcpath, &req.n);
+
+	if (has_extra_args) {
+		tail3 = addattr_nest(&req.n, MAX_MSG, P4TC_ENTRY_FILTER | NLA_F_NESTED);
+		tail4 = addattr_nest(&req.n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
+		add_typed_expr(&req.n, typed_expr);
+		free_typedexpr(typed_expr);
+		free_parsedexpr(parsed_expr);
+	}
+
+	if (tail4)
+		addattr_nest_end(&req.n, tail4);
+	if (tail3)
+		addattr_nest_end(&req.n, tail3);
+	if (tail2)
+		addattr_nest_end(&req.n, tail2);
+	addattr_nest_end(&req.n, tail);
+
+	ret = rtnl_talk(rth, &req.n, NULL);
+	if (ret < 0)
+		return ret;
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
 static void parse_common(__u8 *keyblob, __u8 *maskblob,
 			 struct p4_type_value *val, __u32 *offset, size_t sz)
 {
@@ -1097,30 +1221,6 @@ out:
 	return pipeid;
 }
 
-static int add_table_name(char **p4tcpath, struct nlmsghdr *n)
-{
-	char full_tblname[P4TC_TABLE_NAMSIZ] = {0};
-	char *cbname, *tblname;
-	int ret;
-
-	cbname = p4tcpath[PATH_CBNAME_IDX];
-	tblname = p4tcpath[PATH_TBLNAME_IDX];
-
-	if (cbname && tblname) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     P4TC_TABLE_NAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table name too long\n");
-			return -1;
-		}
-	}
-
-	if (!STR_IS_EMPTY(full_tblname))
-		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
-
-	return 0;
-}
-
 static int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
 				  char *p4tcpath[], struct nlmsghdr *n,
 				  __u32 tbl_id)
@@ -1235,6 +1335,7 @@ static int parse_table_entry_filter(int *argc_p, char ***argv_p,
 	int argc = *argc_p;
 
 	tail = addattr_nest(n, MAX_MSG, P4TC_ENTRY_FILTER | NLA_F_NESTED);
+	tail2 = addattr_nest(n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
 
 	tail2 = addattr_nest(n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
 	parsed_expr = parse_expr_args(&argc, (const char * const **)&argv,
