@@ -190,6 +190,109 @@ int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
 		return -1;
 	}
 
+	if (tb[P4TC_ENTRY_WHO_CREATED_ENT]) {
+		__u8 *whodunnit = RTA_DATA(tb[P4TC_ENTRY_WHO_CREATED_ENT]);
+		char name[NAME_MAX_LEN];
+		int ret;
+
+		ret = p4tc_ctrltable_getbyid(*whodunnit, name);
+		if (!ret) {
+			print_string(PRINT_ANY, "create_whodunnit",
+				     "    created by entity: %s ", name);
+			print_int(PRINT_ANY, "create_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		} else {
+			print_string(PRINT_ANY, "create_whodunnit",
+				     "    created by: %s ", "\?\?");
+			print_int(PRINT_ANY, "create_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		}
+
+	}
+
+	if (tb[P4TC_ENTRY_WHO_CREATED_PID]) {
+		__u32 *who_created_pid =
+			RTA_DATA(tb[P4TC_ENTRY_WHO_CREATED_PID]);
+
+		print_int(PRINT_ANY, "who_created_pid",
+			  "    create by pid: %d\n", *who_created_pid);
+	}
+
+	if (tb[P4TC_ENTRY_WHO_CREATED]) {
+		char *who_created = RTA_DATA(tb[P4TC_ENTRY_WHO_CREATED]);
+
+		print_string(PRINT_ANY, "who_created",
+			     "    created by process: %s\n", who_created);
+	}
+
+	if (tb[P4TC_ENTRY_WHO_UPDATED_ENT]) {
+		__u8 *whodunnit = RTA_DATA(tb[P4TC_ENTRY_WHO_UPDATED_ENT]);
+		char name[NAME_MAX_LEN];
+		int ret;
+
+		ret = p4tc_ctrltable_getbyid(*whodunnit, name);
+		if (!ret) {
+			print_string(PRINT_ANY, "update_whodunnit",
+				     "    updated by: %s ", name);
+			print_int(PRINT_ANY, "update_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		} else {
+			print_string(PRINT_ANY, "update_whodunnit",
+				     "    updated by: %s ", "\?\?");
+			print_int(PRINT_ANY, "update_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		}
+	}
+
+	if (tb[P4TC_ENTRY_WHO_UPDATED_PID]) {
+		__u32 *who_updated_pid =
+			RTA_DATA(tb[P4TC_ENTRY_WHO_UPDATED_PID]);
+
+		print_int(PRINT_ANY, "who_updated_pid",
+			  "    update by pid: %d\n", *who_updated_pid);
+	}
+
+	if (tb[P4TC_ENTRY_WHO_UPDATED]) {
+		char *who_updated = RTA_DATA(tb[P4TC_ENTRY_WHO_UPDATED]);
+
+		print_string(PRINT_ANY, "who_updated",
+			     "    updated by process: %s\n", who_updated);
+	}
+
+	if (tb[P4TC_ENTRY_WHO_DELETED_ENT]) {
+		__u8 *whodunnit = RTA_DATA(tb[P4TC_ENTRY_WHO_DELETED_ENT]);
+		char name[NAME_MAX_LEN];
+		int ret;
+
+		ret = p4tc_ctrltable_getbyid(*whodunnit, name);
+		if (!ret) {
+			print_string(PRINT_ANY, "delete_whodunnit",
+				     "    deleted by: %s ", name);
+			print_int(PRINT_ANY, "delete_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		} else {
+			print_string(PRINT_ANY, "delete_whodunnit",
+				     "    deleted by: %s ", "\?\?");
+			print_int(PRINT_ANY, "delete_whodunnit_id",
+				     "(id %d)\n", *whodunnit);
+		}
+	}
+
+	if (tb[P4TC_ENTRY_WHO_DELETED_PID]) {
+		__u32 *who_deleted_pid =
+			RTA_DATA(tb[P4TC_ENTRY_WHO_DELETED_PID]);
+
+		print_int(PRINT_ANY, "who_deleted_pid",
+			  "    delete by pid: %d\n", *who_deleted_pid);
+	}
+
+	if (tb[P4TC_ENTRY_WHO_DELETED]) {
+		char *who_deleted = RTA_DATA(tb[P4TC_ENTRY_WHO_DELETED]);
+
+		print_string(PRINT_ANY, "who_deleted",
+			     "    deleted by process: %s\n", who_deleted);
+	}
+
 	if (tb[P4TC_ENTRY_DYNAMIC])
 		print_string(PRINT_ANY, "dynamic", "    dynamic %s\n",
 			   "true");
