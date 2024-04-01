@@ -318,6 +318,92 @@ free_json_pipeline:
 	return act;
 }
 
+/* Here path is always pname/cbname/actname.
+ * First we try local control block scope, then pipeline (global) scope.
+ */
+static struct p4tc_json_actions_list *
+introspect_tbl_action_byname(struct p4tc_json_pipeline **pipe,
+			     const char **p4tcpath, const char *tblname,
+			     const bool introspect_global)
+{
+	struct p4tc_json_actions_list *act = NULL;
+	const char *pname, *cbname, *actname;
+	char act_and_cbname[ACTNAMSIZ] = {};
+	struct p4tc_json_table *table;
+
+	pname = p4tcpath[DYNACT_PATH_PNAME_IDX];
+	*pipe = p4tc_json_import(pname);
+	if (!pipe) {
+		fprintf(stderr, "Unable to find pipeline %s in JSON file\n",
+			pname);
+		return NULL;
+	}
+
+	table = p4tc_json_find_table(*pipe, tblname);
+	if (!table) {
+		fprintf(stderr, "Unable to find table %s in JSON file\n",
+			pname);
+		goto free_json_pipeline;
+	}
+
+	cbname = p4tcpath[DYNACT_PATH_CBNAME_IDX];
+	actname = p4tcpath[DYNACT_PATH_CBACTNAME_IDX];
+
+	snprintf(act_and_cbname, ACTNAMSIZ, "%s/%s", cbname, actname);
+	/* Try first within local control block scope */
+	act = p4tc_json_find_table_act(table, act_and_cbname);
+	if (!act) {
+		if (introspect_global) {
+			/* Try now in pipeline (global) scope */
+			act = p4tc_json_find_table_act(table, actname);
+			if (!act) {
+				fprintf(stderr,
+					"Unable to find action %s nor action %s for table %s\n",
+					act_and_cbname, actname, tblname);
+				goto free_json_pipeline;
+			}
+		}
+	}
+
+	return act;
+
+free_json_pipeline:
+	p4tc_json_free_pipeline(*pipe);
+	return act;
+}
+
+static int __parse_dyna_params_only(int *argc_p, char ***argv_p,
+				    struct p4tc_json_actions_list *act,
+				    struct nlmsghdr *n)
+{
+	char **argv = *argv_p;
+	int parms_count = 1;
+	int argc = *argc_p;
+
+	/* After finding the action by using pname and actname, one can
+	 * recover the parameters, if the action exists, for introspection.
+	 */
+	while (argc > 0) {
+		if (strcmp(*argv, "param") == 0) {
+			if (dyna_parse_param(&argc, &argv, true,
+					     &parms_count, act, n) < 0)
+				return -1;
+
+			if (argc && strcmp(*argv, "param") == 0)
+				continue;
+		} else {
+			break;
+		}
+		argv++;
+		argc--;
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
 static int __parse_dyna(int *argc_p, char ***argv_p, bool in_act,
 			struct p4tc_json_actions_list *act, struct nlmsghdr *n)
 {
@@ -450,6 +536,49 @@ int parse_dyna(int *argc_p, char ***argv_p, bool in_act, char *actname,
 	if (act && introspect)
 		p4tc_json_free_pipeline(pipe);
 
+	return ret;
+}
+
+static bool is_global_act(char *full_actname)
+{
+	return strchr(full_actname, '/') == NULL;
+}
+
+int parse_dyna_tbl_act(int *argc_p, char ***argv_p, char **actname_p,
+		       const char *tblname, const bool introspect_global,
+		       struct nlmsghdr *n, bool params_only)
+{
+	char *p4tcpath[MAX_PATH_COMPONENTS] = {0};
+	struct p4tc_json_actions_list *act = NULL;
+	struct p4tc_json_pipeline *pipe = NULL;
+	char actname_copy[ACTNAMSIZ];
+	int ret;
+
+	parse_act_path(p4tcpath, *actname_p, actname_copy);
+
+	act = introspect_tbl_action_byname(&pipe, (const char **)p4tcpath,
+					   tblname, introspect_global);
+	if (act && introspect_global && is_global_act(act->name)) {
+		char *pname = p4tcpath[DYNACT_PATH_PIPEACTNAME_IDX];
+		char *actname = p4tcpath[DYNACT_PATH_CBACTNAME_IDX];
+
+		/* Here we now the actname_p string is always
+		 * pname/cbname/actname so there is not harm in converting it to
+		 * a shorter string, i.e, pname/actname.
+		 */
+		snprintf(*actname_p, ACTNAMSIZ, "%s/%s", pname, actname);
+	}
+
+	if (params_only) {
+		ret = __parse_dyna_params_only(argc_p, argv_p, act, n);
+		goto free_json_pipeline;
+	}
+
+	ret = __parse_dyna(argc_p, argv_p, true, act, n);
+
+free_json_pipeline:
+	if (act)
+		p4tc_json_free_pipeline(pipe);
 	return ret;
 }
 

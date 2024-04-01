@@ -1,0 +1,6 @@
+#
+# Reserved entities.
+#
+0	unspec
+1	kernel
+2	tc
