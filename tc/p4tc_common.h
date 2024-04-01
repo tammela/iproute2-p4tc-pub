@@ -35,9 +35,15 @@
 #define PATH_TABLE_PNAME_IDX 0
 #define PATH_RUNTIME_EXT_PNAME_IDX PATH_TABLE_PNAME_IDX
 
+#define PATH_RUNTIME_PNAME_IDX 0
+
 #define MAX_PATH_COMPONENTS 6
 
 #define STR_IS_EMPTY(str) ((str)[0] == '\0')
+
+#define __KERNEL_DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
+
+#define BITS_TO_BYTES(n) __KERNEL_DIV_ROUND_UP(n, sizeof(char) * 8)
 
 /* PATH SYNTAX: tc p4template objtype/pname/...  */
 static inline int parse_path(char *path, char **p4tcpath, const char *separator)
@@ -198,7 +204,10 @@ int parse_table_entry(int cmd, int *argc_p, char ***argv_p,
 int parse_table_entry_help(int cmd, char **p4tcpath);
 int parse_table_default_action(int *argc_p, char ***argv_p,
 			       struct nlmsghdr *n, __u32 attr_id);
-
+struct p4tc_json_key_fields_list *
+introspect_key_field_byname(struct p4tc_json_pipeline **p,
+			    struct p4tc_json_table **t, const char *pname,
+			    const char **p4tcpath, const char *keyname);
 int parse_p4tc_extern(struct nlmsghdr *n, int cmd, unsigned int *flags,
 		       int *argc_p, char ***argv_p, const char **p4tcpath);
 int parse_extern_help(int cmd, char **p4tcpath);
@@ -210,8 +219,8 @@ int p4tc_extern_parse_inst_param(int *argc_p, char ***argv_p, bool in_act,
 int p4tc_print_permissions(const char *prefix, __u16 *passed_permissions,
 			   const char *suffix, FILE *f);
 int print_table_entry(struct nlmsghdr *n, struct rtattr *arg, FILE *f,
-		      const char *prefix, struct p4tc_json_table *table,
-		      __u32 tbl_id);
+		      const char *prefix, struct p4tc_json_pipeline *pipe,
+		      struct p4tc_json_table *table, __u32 tbl_id);
 int p4tc_extern_inst_print_params(struct rtattr *arg, FILE *f);
 int print_extern(struct nlmsghdr *n, void *arg);
 int p4tc_print_one_extern(FILE *f, struct rtattr *arg, bool bind);

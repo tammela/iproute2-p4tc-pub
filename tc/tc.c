@@ -24,6 +24,7 @@
 #include "rt_names.h"
 #include "bpf_util.h"
 #include "p4tc_common.h"
+#include "p4tc_filter.h"
 
 int show_stats;
 int show_details;
@@ -219,6 +220,8 @@ static int do_cmd(int argc, char **argv)
 		return do_tcmonitor(argc-1, argv+1);
 	if (matches(*argv, "exec") == 0)
 		return do_exec(argc-1, argv+1);
+	if (matches(*argv, "p4ctrl") == 0)
+		return do_p4_runtime(argc-1, argv+1);
 	if (matches(*argv, "p4template") == 0)
 		return do_p4tmpl(argc-1, argv+1);
 	if (matches(*argv, "help") == 0) {
@@ -337,6 +340,7 @@ int main(int argc, char **argv)
 
 #ifdef P4TC
 	register_p4_types();
+	register_known_unprefixed_names();
 #endif
 
 	if (batch_file)
