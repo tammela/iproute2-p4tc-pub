@@ -105,9 +105,11 @@ int do_tcmonitor(int argc, char **argv)
 					has_filter = true;
 					break;
 				}
+			} else if (strcmp(*argv, "digest") == 0) {
+				groups = RTNLGRP_P4TC_DIGEST;
 			} else {
 				fprintf(stderr,
-					"Argument \"p4\" should be proceeded by events and not \"%s\"\n",
+					"Argument \"p4\" should be proceeded by events or digest and not \"%s\"\n",
 					*argv);
 				exit(-1);
 			}
@@ -163,6 +165,11 @@ int do_tcmonitor(int argc, char **argv)
 	if (has_filter) {
 		int ret;
 
+		if (groups == RTNLGRP_P4TC_DIGEST) {
+			fprintf(stderr,
+				"Filter with digest is not yet supported\n");
+			exit(1);
+		}
 		if (groups != RTNLGRP_P4TC) {
 			fprintf(stderr,
 				"Filter may only be used for P4TC group\n");
