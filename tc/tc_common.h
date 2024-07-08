@@ -27,5 +27,7 @@ struct tc_sizespec;
 int parse_size_table(int *p_argc, char ***p_argv, struct tc_sizespec *s);
 int check_size_table_opts(struct tc_sizespec *s);
 
+int tc_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p);
+
 extern int show_graph;
 extern bool use_names;

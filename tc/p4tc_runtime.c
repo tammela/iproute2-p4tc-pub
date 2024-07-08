@@ -33,6 +33,7 @@
 #include "p4tc_common.h"
 #include "p4_types.h"
 #include "p4tc_filter.h"
+#include "p4tc_filter_parser.h"
 
 static void help_p4ctrl(void)
 {
@@ -44,6 +45,198 @@ static void help_p4ctrl(void)
 		"\tOBJTYPE := <table | extern>\n"
 		"\tOBJPATH := path to the object, example mycontrolblock/mytable\n"
 		"\tOBJATTRS are the object specific attributes, example entry keys\n");
+}
+
+struct nl_req {
+	struct nlmsghdr n;
+	struct p4tcmsg t;
+	char buf[MAX_MSG];
+};
+
+static int tc_filter_common(struct p4tc_filter_ctx *ctx, struct nl_req *req,
+			    struct typedexpr **typed_expr, int *argc_p,
+			    char ***argv_p, bool *has_extra_args)
+{
+	struct parsedexpr *parsed_expr = NULL;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+
+	req->n.nlmsg_len = NLMSG_LENGTH(sizeof(struct p4tcmsg));
+	req->n.nlmsg_flags = NLM_F_REQUEST;
+	req->n.nlmsg_type = RTM_P4TC_CREATE;
+
+	NEXT_ARG_FWD();
+
+	*has_extra_args = !!argc;
+	if (*has_extra_args && strcmp(*argv, "filter")) {
+		fprintf(stderr, "Invalid argument %s\n", *argv);
+		return -1;
+	}
+
+	req->t.obj = ctx->obj_id;
+
+	if (*has_extra_args) {
+		NEXT_ARG();
+
+		parsed_expr = parse_expr_args(&argc,
+					      (const char * const **)&argv,
+					      NULL);
+		if (parsed_expr->t == ET_ERR) {
+			fprintf(stderr, "Failed to parse expr: %s\n",
+				parsed_expr->errmsg);
+			return -1;
+		}
+
+		*typed_expr = type_expr(ctx, parsed_expr);
+		free_parsedexpr(parsed_expr);
+		if ((*typed_expr)->t == ET_ERR) {
+			fprintf(stderr, "Failed to type expr: %s\n",
+				(*typed_expr)->errmsg_fmt);
+			return -1;
+		}
+		dump_typed_expr(*typed_expr, 0);
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return 0;
+}
+
+static int tc_filter_add_attrs(struct rtnl_handle *rth, struct nl_req *req,
+			       struct typedexpr *typed_expr, const __u32 attr)
+{
+	struct rtattr *tail3 = NULL, *tail4 = NULL;
+
+
+	tail3 = addattr_nest(&req->n, MAX_MSG, attr | NLA_F_NESTED);
+	tail4 = addattr_nest(&req->n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
+	add_typed_expr(&req->n, typed_expr);
+
+	if (tail4)
+		addattr_nest_end(&req->n, tail4);
+	if (tail3)
+		addattr_nest_end(&req->n, tail3);
+
+	return 0;
+}
+
+static int tc_table_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p,
+			   char **p4tcpath)
+{
+	const char *pname = p4tcpath[PATH_RUNTIME_PNAME_IDX];
+	const char *tblname = p4tcpath[PATH_TBLNAME_IDX];
+	const char *cbname = p4tcpath[PATH_CBNAME_IDX];
+	char full_tblname[P4TC_TABLE_NAMSIZ] = {0};
+	struct typedexpr *typed_expr = NULL;
+	struct p4tc_filter_ctx ctx = {};
+	struct p4tc_json_pipeline *p;
+	struct rtattr *tail, *tail2;
+	struct p4tc_json_table *t;
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	struct nl_req req = {
+		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct p4tcmsg)),
+		.n.nlmsg_flags = NLM_F_REQUEST,
+		.n.nlmsg_type = RTM_P4TC_CREATE,
+	};
+	bool has_extra_args;
+	int ret;
+
+	p = p4tc_json_import(pname);
+	if (!p) {
+		fprintf(stderr, "Unable to find pipeline %s\n",
+			pname);
+		return -1;
+	}
+	ctx.p = p;
+
+	if (concat_cb_name(full_tblname, cbname, tblname, P4TC_TABLE_NAMSIZ) < 0) {
+		fprintf(stderr, "Table name to long %s/%s\n", cbname, tblname);
+		ret = -1;
+		goto clear_ctx;
+	}
+
+	t = p4tc_json_find_table(p, full_tblname);
+	if (!t) {
+		fprintf(stderr, "Unable to find table %s\n", tblname);
+		ret = -1;
+		goto clear_ctx;
+	}
+	ctx.t = t;
+	ctx.obj_id = P4TC_OBJ_RUNTIME_TABLE;
+
+	ret = tc_filter_common(&ctx, &req, &typed_expr, &argc, &argv,
+			       &has_extra_args);
+	if (ret < 0)
+		return ret;
+
+	if (pname)
+		addattrstrz(&req.n, MAX_MSG, P4TC_ROOT_PNAME, pname);
+
+	tail = addattr_nest(&req.n, MAX_MSG,
+			    P4TC_ROOT_SUBSCRIBE | NLA_F_NESTED);
+
+	addattr32(&req.n, MAX_MSG, P4TC_PATH, 0);
+
+	tail2 = addattr_nest(&req.n, MAX_MSG,
+			     P4TC_PARAMS | NLA_F_NESTED);
+
+	if (!STR_IS_EMPTY(full_tblname))
+		addattrstrz(&req.n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
+
+	if (has_extra_args) {
+		ret = tc_filter_add_attrs(rth, &req, typed_expr,
+					  P4TC_ENTRY_FILTER);
+
+		if (ret < 0)
+			goto free_typed_expr;
+	}
+
+	addattr_nest_end(&req.n, tail2);
+	addattr_nest_end(&req.n, tail);
+
+	ret = rtnl_talk(rth, &req.n, NULL);
+	if (ret < 0)
+		goto free_typed_expr;
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+free_typed_expr:
+	free_typedexpr(typed_expr);
+clear_ctx:
+	p4tc_filter_ctx_free(&ctx);
+	return ret;
+}
+
+#define P4TC_CMD_NAME_IDX 1
+
+int tc_p4ctrl_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p)
+{
+	char *p4tcpath[MAX_PATH_COMPONENTS] = {NULL};
+	char **argv = *argv_p;
+	int argc = *argc_p;
+	int ret;
+
+	NEXT_ARG();
+	parse_path(*argv, p4tcpath, "/");
+	if (!p4tcpath[PATH_TABLE_OBJ_IDX]) {
+		fprintf(stderr, "Must specify obj type\n");
+		return -1;
+	}
+
+	if (strcmp(p4tcpath[PATH_TABLE_OBJ_IDX], "table") == 0) {
+		ret = tc_table_filter(rth, &argc, &argv, p4tcpath);
+	} else {
+		fprintf(stderr, "Unknown filter object %s\n", *argv);
+		return -1;
+	}
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+	return ret;
 }
 
 int print_p4ctrl(struct nlmsghdr *n, void *arg)

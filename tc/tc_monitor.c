@@ -87,12 +87,31 @@ int do_tcmonitor(int argc, char **argv)
 {
 	struct rtnl_handle rth;
 	char *file = NULL;
-	unsigned int groups = nl_mgrp(RTNLGRP_TC);
+	unsigned int groups = 0;
+#ifdef P4TC
+	bool has_filter = false;
+#endif
 
 	while (argc > 0) {
 		if (matches(*argv, "file") == 0) {
 			NEXT_ARG();
 			file = *argv;
+#ifdef P4TC
+		} else if (strcmp(*argv, "p4") == 0) {
+			NEXT_ARG();
+			if (strcmp(*argv, "events") == 0) {
+				groups = RTNLGRP_P4TC;
+				if (NEXT_ARG_OK()) {
+					has_filter = true;
+					break;
+				}
+			} else {
+				fprintf(stderr,
+					"Argument \"p4\" should be proceeded by events and not \"%s\"\n",
+					*argv);
+				exit(-1);
+			}
+#endif
 		} else {
 			if (matches(*argv, "help") == 0) {
 				usage();
@@ -108,7 +127,7 @@ int do_tcmonitor(int argc, char **argv)
 		FILE *fp = fopen(file, "r");
 		int ret;
 
-		if (fp == NULL) {
+		if (!fp) {
 			perror("Cannot fopen");
 			exit(-1);
 		}
@@ -117,11 +136,44 @@ int do_tcmonitor(int argc, char **argv)
 		fclose(fp);
 		return ret;
 	}
-
+#ifdef P4TC
+	if (groups) {
+		if (rtnl_open(&rth, 0) < 0)
+			exit(1);
+		if (rtnl_add_nl_group(&rth, groups) < 0) {
+			fprintf(stderr,
+				"Failed to subscribe to P4TC rtnl group\n");
+			rtnl_close(&rth);
+			exit(1);
+		}
+	} else {
+		groups = nl_mgrp(RTNLGRP_TC);
+		if (rtnl_open(&rth, groups) < 0)
+			exit(1);
+	}
+#else
+	groups = nl_mgrp(RTNLGRP_TC);
 	if (rtnl_open(&rth, groups) < 0)
 		exit(1);
+#endif
 
 	ll_init_map(&rth);
+
+#ifdef P4TC
+	if (has_filter) {
+		int ret;
+
+		if (groups != RTNLGRP_P4TC) {
+			fprintf(stderr,
+				"Filter may only be used for P4TC group\n");
+			exit(1);
+		}
+
+		ret = tc_filter(&rth, &argc, &argv);
+		if (ret < 0)
+			return ret;
+	}
+#endif
 
 	if (rtnl_listen(&rth, accept_tcmsg, (void *)stdout) < 0) {
 		rtnl_close(&rth);

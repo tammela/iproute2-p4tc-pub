@@ -35,6 +35,30 @@
 #include "p4_types.h"
 #include "p4tc_filter.h"
 
+static int add_table_name(char **p4tcpath, struct nlmsghdr *n)
+{
+	char full_tblname[P4TC_TABLE_NAMSIZ] = {0};
+	char *cbname, *tblname;
+	int ret;
+
+	cbname = p4tcpath[PATH_CBNAME_IDX];
+	tblname = p4tcpath[PATH_TBLNAME_IDX];
+
+	if (cbname && tblname) {
+		ret = concat_cb_name(full_tblname, cbname, tblname,
+				     P4TC_TABLE_NAMSIZ);
+		if (ret < 0) {
+			fprintf(stderr, "table name too long\n");
+			return -1;
+		}
+	}
+
+	if (!STR_IS_EMPTY(full_tblname))
+		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
+
+	return 0;
+}
+
 static __u8 get_buffer_index(__u8 *buffer_u8, size_t buffer_bitsz,
 			     struct p4_type_s *type)
 {
@@ -1211,30 +1235,6 @@ out:
 	return pipeid;
 }
 
-static int add_table_name(char **p4tcpath, struct nlmsghdr *n)
-{
-	char full_tblname[P4TC_TABLE_NAMSIZ] = {0};
-	char *cbname, *tblname;
-	int ret;
-
-	cbname = p4tcpath[PATH_CBNAME_IDX];
-	tblname = p4tcpath[PATH_TBLNAME_IDX];
-
-	if (cbname && tblname) {
-		ret = concat_cb_name(full_tblname, cbname, tblname,
-				     P4TC_TABLE_NAMSIZ);
-		if (ret < 0) {
-			fprintf(stderr, "table name too long\n");
-			return -1;
-		}
-	}
-
-	if (!STR_IS_EMPTY(full_tblname))
-		addattrstrz(n, MAX_MSG, P4TC_ENTRY_TBLNAME, full_tblname);
-
-	return 0;
-}
-
 static int parse_table_entry_data(int cmd, int *argc_p, char ***argv_p,
 				  char *p4tcpath[], struct nlmsghdr *n,
 				  __u32 tbl_id)
@@ -1356,6 +1356,7 @@ static int parse_table_entry_filter(int *argc_p, char ***argv_p,
 	int ret;
 
 	tail = addattr_nest(n, MAX_MSG, P4TC_ENTRY_FILTER | NLA_F_NESTED);
+	tail2 = addattr_nest(n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
 
 	tail2 = addattr_nest(n, MAX_MSG, P4TC_FILTER_OP | NLA_F_NESTED);
 	parsed_expr = parse_expr_args(&argc, (const char * const **)&argv,

@@ -201,6 +201,7 @@ int parse_new_table_entry(int *argc_p, char ***argv_p, struct nlmsghdr *n,
                          struct parse_state *state, char *p4tcpath[],
                          const char *pname, __u32 *ids, __u32 *offset);
 int print_table(struct nlmsghdr *n, void *arg);
+int tc_p4ctrl_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p);
 
 int parse_table_entry(int cmd, int *argc_p, char ***argv_p,
                      char *p4tcpath[], struct nlmsghdr *n,

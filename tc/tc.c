@@ -105,6 +105,14 @@ static int parse_nofopt(const struct filter_util *qu,
 	return 0;
 }
 
+#ifdef P4TC
+int tc_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p)
+{
+
+	return tc_p4ctrl_filter(rth, argc_p, argv_p);
+}
+#endif
+
 const struct qdisc_util *get_qdisc_kind(const char *str)
 {
 	void *dlh;
