@@ -25,6 +25,7 @@
 #include <dlfcn.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <linux/p4tc_ext.h>
 
 #include "utils.h"
 #include "rt_names.h"
@@ -210,6 +211,88 @@ clear_ctx:
 	return ret;
 }
 
+static int tc_extern_filter(struct rtnl_handle *rth, int *argc_p,
+			    char ***argv_p, char **p4tcpath)
+{
+	const char *instname = p4tcpath[PATH_RUNTIME_EXTINSTNAME_IDX];
+	struct nl_req req = {
+		.n.nlmsg_len = NLMSG_LENGTH(sizeof(struct p4tcmsg)),
+		.n.nlmsg_flags = NLM_F_REQUEST,
+		.n.nlmsg_type = RTM_P4TC_CREATE,
+	};
+	const char *pname = p4tcpath[PATH_RUNTIME_PNAME_IDX];
+	const char *k = p4tcpath[PATH_RUNTIME_EXTNAME_IDX];
+	struct p4tc_json_extern_insts_list *inst;
+	struct typedexpr *typed_expr = NULL;
+	struct p4tc_filter_ctx ctx = {};
+	struct p4tc_json_pipeline *p;
+	struct rtattr *tail, *tail2;
+	char **argv = *argv_p;
+	bool has_extra_args;
+	int argc = *argc_p;
+	int ret;
+
+	p = p4tc_json_import(pname);
+	if (!p) {
+		fprintf(stderr, "Unable to find pipeline %s\n",
+			pname);
+		return -1;
+	}
+	ctx.p = p;
+
+	inst = p4tc_json_find_extern_inst(p, k, instname);
+	if (!inst) {
+		fprintf(stderr, "Unable to find extern inst %s\n", instname);
+		ret = -1;
+		goto clear_ctx;
+	}
+	ctx.inst = inst;
+	ctx.obj_id = P4TC_OBJ_RUNTIME_EXTERN;
+
+	ret = tc_filter_common(&ctx, &req, &typed_expr, &argc, &argv,
+			       &has_extra_args);
+	if (ret < 0)
+		goto clear_ctx;
+
+	if (p4tcpath[PATH_RUNTIME_PNAME_IDX])
+		addattrstrz(&req.n, MAX_MSG, P4TC_ROOT_PNAME, pname);
+
+	tail = addattr_nest(&req.n, MAX_MSG,
+			    P4TC_ROOT_SUBSCRIBE | NLA_F_NESTED);
+
+	addattr32(&req.n, MAX_MSG, P4TC_PATH, 0);
+
+	tail2 = addattr_nest(&req.n, MAX_MSG,
+			     P4TC_PARAMS | NLA_F_NESTED);
+
+	addattrstrz(&req.n, MAX_MSG, P4TC_EXT_KIND, k);
+	addattrstrz(&req.n, MAX_MSG, P4TC_EXT_INST_NAME, instname);
+
+	if (has_extra_args) {
+		ret = tc_filter_add_attrs(rth, &req, typed_expr,
+					  P4TC_EXT_FILTER);
+
+		if (ret < 0)
+			goto free_typed_expr;
+	}
+
+	addattr_nest_end(&req.n, tail2);
+	addattr_nest_end(&req.n, tail);
+
+	ret = rtnl_talk(rth, &req.n, NULL);
+	if (ret < 0)
+		goto free_typed_expr;
+
+	*argc_p = argc;
+	*argv_p = argv;
+
+free_typed_expr:
+	free_typedexpr(typed_expr);
+clear_ctx:
+	p4tc_filter_ctx_free(&ctx);
+	return ret;
+}
+
 #define P4TC_CMD_NAME_IDX 1
 
 int tc_p4ctrl_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p)
@@ -228,6 +311,8 @@ int tc_p4ctrl_filter(struct rtnl_handle *rth, int *argc_p, char ***argv_p)
 
 	if (strcmp(p4tcpath[PATH_TABLE_OBJ_IDX], "table") == 0) {
 		ret = tc_table_filter(rth, &argc, &argv, p4tcpath);
+	} else if (strcmp(p4tcpath[PATH_TABLE_OBJ_IDX], "extern") == 0) {
+		ret = tc_extern_filter(rth, &argc, &argv, p4tcpath);
 	} else {
 		fprintf(stderr, "Unknown filter object %s\n", *argv);
 		return -1;
